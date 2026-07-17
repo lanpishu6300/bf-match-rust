@@ -1,7 +1,13 @@
 //! Pure matching engine (no MQ/Redis/HTTP).
 
 mod book;
+mod engine;
+mod event;
+mod id;
 mod order;
 
 pub use book::OrderBook;
+pub use engine::Engine;
+pub use event::MatchEvent;
+pub use id::{AtomicU64IdGenerator, IdGenerator};
 pub use order::{compare_buy, compare_sell, BbOrder, Side};

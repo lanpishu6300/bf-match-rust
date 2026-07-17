@@ -207,6 +207,7 @@ version = "0.1.0"
 dependencies = [
  "bigdecimal",
  "match-protocol",
+ "serde",
  "thiserror",
  "tracing",
 ]
