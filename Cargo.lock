@@ -742,6 +742,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "match-core-hp"
+version = "0.1.0"
+dependencies = [
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "match-protocol"
 version = "0.1.0"
 dependencies = [
