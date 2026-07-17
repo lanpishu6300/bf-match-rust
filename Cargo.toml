@@ -3,6 +3,7 @@ resolver = "2"
 members = [
   "crates/match-protocol",
   "crates/match-core",
+  "crates/match-core-hp",
   "crates/match-replay",
   "crates/match-contract",
   "crates/match-spot",
