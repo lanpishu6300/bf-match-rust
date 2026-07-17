@@ -745,6 +745,8 @@ dependencies = [
 name = "match-core-hp"
 version = "0.1.0"
 dependencies = [
+ "bigdecimal",
+ "match-protocol",
  "thiserror 1.0.69",
 ]
 

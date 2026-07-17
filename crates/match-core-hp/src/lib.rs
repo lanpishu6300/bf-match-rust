@@ -1,6 +1,7 @@
 //! High-performance matching core (fixed-point, price-level book).
 //! Not Java-equivalent; not used by match-contract by default.
 
+pub mod adapter;
 mod book;
 mod engine;
 mod order_store;

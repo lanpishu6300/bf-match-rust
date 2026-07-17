@@ -5,3 +5,5 @@ edition.workspace = true
 
 [dependencies]
 thiserror = { workspace = true }
+match-protocol = { path = "../match-protocol" }
+bigdecimal = { workspace = true }
