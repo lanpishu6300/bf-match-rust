@@ -15,10 +15,26 @@ pub struct Config {
     pub r#match: MatchConfig,
 }
 
+/// MQ transport backend. Production RocketMQ is blocked pending client compatibility;
+/// default to `memory` for local runs (see `docs/rmq-spike.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum MqTransport {
+    #[default]
+    Memory,
+    /// Reserved — not wired until NameServer spike passes.
+    Rocketmq,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct RocketMqConfig {
     pub name_server: String,
     pub consumer_group: String,
+    #[serde(default)]
+    pub transport: MqTransport,
+    /// Optional directory for memory file-channel (`out/` writes, `in/` reads).
+    #[serde(default)]
+    pub memory_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
