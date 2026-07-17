@@ -1,5 +1,5 @@
 use bigdecimal::{BigDecimal, Zero};
-use std::ops::Deref;
+use std::ops::{Deref, DerefMut};
 use std::str::FromStr;
 
 pub use match_protocol::BbOrder as ProtocolBbOrder;
@@ -13,6 +13,12 @@ impl Deref for BbOrder {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl DerefMut for BbOrder {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
     }
 }
 

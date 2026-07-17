@@ -4,9 +4,12 @@ use bigdecimal::BigDecimal;
 
 use crate::book::OrderBook;
 use crate::event::MatchEvent;
+use crate::match_limit::{
+    handle_limit_buy, handle_limit_sell, is_deferred_order_form, is_revoke, rest_only, revoke_order,
+};
 use crate::order::{BbOrder, Side};
 
-/// Per-symbol matching engine facade (L1: rest limit orders only).
+/// Per-symbol matching engine facade.
 #[derive(Debug, Default)]
 pub struct Engine {
     books: HashMap<String, OrderBook>,
@@ -17,14 +20,28 @@ impl Engine {
         Self::default()
     }
 
-    /// Accept an incoming order. L1: limit orders rest on the book; no matching yet.
+    /// Accept an incoming order: revoke, limit-match, or rest (market/advanced deferred).
     pub fn on_order(&mut self, order: BbOrder) -> Vec<MatchEvent> {
         let symbol = order.symbol_key.clone();
-        self.books
-            .entry(symbol)
-            .or_insert_with(OrderBook::new)
-            .insert(order);
-        Vec::new()
+        let book = self.books.entry(symbol).or_insert_with(OrderBook::new);
+
+        if is_revoke(&order) {
+            return revoke_order(book, &order).into_iter().collect();
+        }
+
+        if is_deferred_order_form(order.order_form) {
+            rest_only(book, order);
+            return Vec::new();
+        }
+
+        match Side::from_order_type(order.order_type) {
+            Some(Side::Buy) => handle_limit_buy(book, order),
+            Some(Side::Sell) => handle_limit_sell(book, order),
+            None => {
+                rest_only(book, order);
+                Vec::new()
+            }
+        }
     }
 
     /// Aggregated depth for `symbol` and `side`: best prices first, qty summed per level.

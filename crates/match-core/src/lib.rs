@@ -4,7 +4,9 @@ mod book;
 mod engine;
 mod event;
 mod id;
+mod match_limit;
 mod order;
+mod price_utils;
 
 pub use book::OrderBook;
 pub use engine::Engine;

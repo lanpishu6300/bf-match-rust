@@ -93,6 +93,44 @@ impl OrderBook {
         self.best(side)
     }
 
+    /// Remove and return the best order on `side` (price-time first).
+    pub fn pop_first(&mut self, side: Side) -> Option<BbOrder> {
+        match side {
+            Side::Buy => self.buys.pop_first().map(|entry| entry.0),
+            Side::Sell => self.sells.pop_first().map(|entry| entry.0),
+        }
+    }
+
+    /// Find and remove an order by `trust_order_no` (Java revoke lookup).
+    pub fn remove_by_order_no(&mut self, side: Side, order_no: &str) -> Option<BbOrder> {
+        match side {
+            Side::Buy => {
+                let key = self
+                    .buys
+                    .iter()
+                    .find(|entry| entry.0.trust_order_no == order_no)?
+                    .clone();
+                if self.buys.remove(&key) {
+                    Some(key.0)
+                } else {
+                    None
+                }
+            }
+            Side::Sell => {
+                let key = self
+                    .sells
+                    .iter()
+                    .find(|entry| entry.0.trust_order_no == order_no)?
+                    .clone();
+                if self.sells.remove(&key) {
+                    Some(key.0)
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
     pub fn is_empty(&self, side: Side) -> bool {
         match side {
             Side::Buy => self.buys.is_empty(),
