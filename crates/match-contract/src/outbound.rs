@@ -12,6 +12,7 @@ use tracing::{debug, error, warn};
 use crate::error_queue::ErrorQueue;
 use crate::mq::producer::Producer;
 use crate::redis_store::RedisStore;
+use crate::telemetry;
 
 /// Minimal BBOrder-like push DTO for fill / revoke consumers.
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -97,6 +98,7 @@ impl Outbound {
                     taker_status,
                     maker_status,
                 } => {
+                    telemetry::record_fill();
                     push_batch.push(PushOrder {
                         symbol_key: symbol.clone(),
                         trust_order_no: taker_order_no.clone(),
@@ -117,6 +119,7 @@ impl Outbound {
                     remaining,
                     reason,
                 } => {
+                    telemetry::record_order_cancelled();
                     push_batch.push(PushOrder {
                         symbol_key: symbol.clone(),
                         trust_order_no: order_no.clone(),

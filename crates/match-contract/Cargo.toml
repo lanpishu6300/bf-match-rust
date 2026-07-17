@@ -11,6 +11,7 @@ name = "match-contract"
 path = "src/main.rs"
 
 [dependencies]
+axum = "0.7"
 bigdecimal = { workspace = true }
 match-core = { path = "../match-core" }
 match-protocol = { path = "../match-protocol" }

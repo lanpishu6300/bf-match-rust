@@ -11,6 +11,8 @@ use thiserror::Error;
 use tokio::sync::mpsc;
 use tracing::{debug, warn};
 
+use crate::telemetry;
+
 /// Startup dedupe state (`START_QUEUE_MAP` + `GlobalVariables.BigNo`).
 #[derive(Debug, Default)]
 pub struct StartQueueState {
@@ -159,6 +161,7 @@ impl InboundRouter {
     /// Port of `BaseConsumer.handleMqData` (with START_QUEUE / BigNo dedupe).
     pub fn handle_mq_order(&self, mq_order: &MqOrder) -> Result<(), InboundError> {
         if !check_mq_order(mq_order) {
+            telemetry::record_inbound_invalid();
             warn!(
                 symbol = ?mq_order.symbol_key,
                 order_no = ?mq_order.trust_order_no,
@@ -168,6 +171,7 @@ impl InboundRouter {
         }
 
         let Some(order) = type_convert(mq_order) else {
+            telemetry::record_inbound_invalid();
             warn!(
                 symbol = ?mq_order.symbol_key,
                 order_no = ?mq_order.trust_order_no,
@@ -180,7 +184,9 @@ impl InboundRouter {
             return Ok(());
         }
 
-        self.enqueue(order)
+        self.enqueue(order)?;
+        telemetry::record_order_placed();
+        Ok(())
     }
 
     /// Restore path (`InitLoadData.handleMqData`): no START_QUEUE dedupe on the way in;

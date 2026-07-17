@@ -3,9 +3,11 @@
 pub mod bootstrap;
 pub mod config;
 pub mod error_queue;
+pub mod health;
 pub mod inbound;
 pub mod mq;
 pub mod outbound;
 pub mod redis_store;
 pub mod rpc;
 pub mod symbol_worker;
+pub mod telemetry;

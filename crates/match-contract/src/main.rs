@@ -3,6 +3,7 @@ use std::sync::Arc;
 
 use match_contract::bootstrap::{self, BootstrapError};
 use match_contract::config::{load_from_path, Config, MqTransport};
+use match_contract::health::{spawn_server, BootstrapReady};
 use match_contract::mq::{MemoryMessageSource, MemoryOrderSink, MessageSource, OrderSink};
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
@@ -31,8 +32,19 @@ async fn main() {
         shard = config.shard,
         transport = ?config.rocketmq.transport,
         name_server = %config.rocketmq.name_server,
+        health_port = config.health.port,
         "match-contract starting"
     );
+
+    let bootstrap_ready = BootstrapReady::new();
+    let _health_task = if config.health.enabled {
+        Some(spawn_server(
+            config.health.port,
+            bootstrap_ready.shared(),
+        ))
+    } else {
+        None
+    };
 
     let (sink, source) = build_transport(&config);
 
@@ -64,6 +76,7 @@ async fn main() {
         }
     };
 
+    bootstrap_ready.mark_ready();
     info!(
         symbols = running.symbols.len(),
         "bootstrap complete; awaiting shutdown (ctrl_c)"

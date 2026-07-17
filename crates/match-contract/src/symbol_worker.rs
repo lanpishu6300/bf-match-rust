@@ -9,6 +9,7 @@ use tokio::task::JoinHandle;
 use tracing::{error, info};
 
 use crate::outbound::Outbound;
+use crate::telemetry;
 
 /// Spawn a worker that owns an [`Engine`] for `symbol`.
 pub fn spawn_symbol_worker(
@@ -21,6 +22,7 @@ pub fn spawn_symbol_worker(
         info!(symbol = %symbol, "symbol worker started");
         while let Some(order) = rx.recv().await {
             let order_no = order.trust_order_no.clone();
+            telemetry::record_order_event();
             match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 engine.on_order(CoreOrder(order))
             })) {

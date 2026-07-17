@@ -9,10 +9,38 @@ pub struct Config {
     pub start_queue_ttl_ms: u64,
     pub depth_push_interval_ms: u64,
     pub symbol_workers: u32,
+    #[serde(default)]
+    pub health: HealthConfig,
     pub rocketmq: RocketMqConfig,
     pub redis: RedisConfig,
     pub rpc: RpcConfig,
     pub r#match: MatchConfig,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct HealthConfig {
+    /// HTTP port for `/healthz`, `/readyz`, `/metrics` (Java `server.port` = 31015).
+    #[serde(default = "default_health_port")]
+    pub port: u16,
+    #[serde(default = "default_health_enabled")]
+    pub enabled: bool,
+}
+
+fn default_health_port() -> u16 {
+    31015
+}
+
+fn default_health_enabled() -> bool {
+    true
+}
+
+impl Default for HealthConfig {
+    fn default() -> Self {
+        Self {
+            port: default_health_port(),
+            enabled: default_health_enabled(),
+        }
+    }
 }
 
 /// MQ transport backend. Production RocketMQ is blocked pending client compatibility;
