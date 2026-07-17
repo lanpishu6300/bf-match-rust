@@ -2,8 +2,8 @@
 
 use bigdecimal::{BigDecimal, Zero};
 use match_protocol::{
-    ORDER_FORM_FOK, ORDER_FORM_IOC, ORDER_FORM_MARKET_PRICE, ORDER_FORM_POST_ONLY,
-    ORDER_STATUS_REVOKE, ORDER_STATUS_SUCCESS, ORDER_STATUS_SUCCESS_PART,
+    ORDER_FORM_FOK, ORDER_FORM_IOC, ORDER_FORM_POST_ONLY, ORDER_STATUS_REVOKE,
+    ORDER_STATUS_SUCCESS, ORDER_STATUS_SUCCESS_PART,
 };
 
 use crate::book::OrderBook;
@@ -43,22 +43,31 @@ fn fill_event(
     }
 }
 
-/// True for market / PostOnly / IOC / FOK — Task 5 leaves these as rest-only.
+/// True for PostOnly / IOC / FOK — deferred until advanced handlers (Task 7).
+/// Market (`ORDER_FORM_MARKET_PRICE`) is handled in `match_market`.
 pub fn is_deferred_order_form(order_form: i8) -> bool {
     matches!(
         order_form,
-        ORDER_FORM_MARKET_PRICE | ORDER_FORM_POST_ONLY | ORDER_FORM_IOC | ORDER_FORM_FOK
+        ORDER_FORM_POST_ONLY | ORDER_FORM_IOC | ORDER_FORM_FOK
     )
 }
 
 pub fn revoke_order(book: &mut OrderBook, order: &BbOrder) -> Option<MatchEvent> {
+    revoke_order_with_reason(book, order, "user")
+}
+
+pub fn revoke_order_with_reason(
+    book: &mut OrderBook,
+    order: &BbOrder,
+    reason: &str,
+) -> Option<MatchEvent> {
     let side = Side::from_order_type(order.order_type)?;
     let removed = book.remove_by_order_no(side, &order.trust_order_no)?;
     Some(MatchEvent::Revoke {
         order_no: removed.trust_order_no.clone(),
         symbol: removed.symbol_key.clone(),
         remaining: dec_str(&removed.remaining_number),
-        reason: "user".to_string(),
+        reason: reason.to_string(),
     })
 }
 
@@ -110,14 +119,14 @@ pub fn handle_limit_sell(book: &mut OrderBook, order: BbOrder) -> Vec<MatchEvent
     events
 }
 
-enum RatherThanSellResult {
+pub(crate) enum RatherThanSellResult {
     Fill(MatchEvent),
     Revoked(MatchEvent),
     None,
 }
 
 /// Java `RatherThanHandler.buyHandle`: buy remaining > sell → take sell; else LessThan.
-fn rather_than_buy(book: &mut OrderBook) -> Option<MatchEvent> {
+pub(crate) fn rather_than_buy(book: &mut OrderBook) -> Option<MatchEvent> {
     let mut buy = book.pop_first(Side::Buy)?;
     let sell = book.pop_first(Side::Sell)?;
     let last_buy = remaining(&buy);
@@ -230,7 +239,7 @@ fn equals_buy(
 }
 
 /// Java `RatherThanHandler.sellHandle`.
-fn rather_than_sell(book: &mut OrderBook) -> RatherThanSellResult {
+pub(crate) fn rather_than_sell(book: &mut OrderBook) -> RatherThanSellResult {
     let Some(mut sell) = book.pop_first(Side::Sell) else {
         return RatherThanSellResult::None;
     };

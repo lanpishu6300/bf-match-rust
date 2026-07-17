@@ -5,6 +5,7 @@ mod engine;
 mod event;
 mod id;
 mod match_limit;
+mod match_market;
 mod order;
 mod price_utils;
 
