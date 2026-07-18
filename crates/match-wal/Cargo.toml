@@ -1,0 +1,12 @@
+[package]
+name = "match-wal"
+version.workspace = true
+edition.workspace = true
+publish = false
+
+[dependencies]
+thiserror = { workspace = true }
+
+[[bin]]
+name = "wal_bench"
+path = "src/bin/wal_bench.rs"

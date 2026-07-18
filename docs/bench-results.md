@@ -52,4 +52,13 @@ cargo run -p match-bench --release --bin fair_compare -- --n 50000
 
 Protocol: [`fair-compare.md`](fair-compare.md). Do not compare against zero-fill ART/SIMD peaks.
 
+## Phase A add-ons (2026-07-18 evening)
+
+- Best-price cache + level pool + `LevelIndex`; optional `--features art` (byte-radix).
+- Parity: `cargo test -p match-core-hp --features art --test art_parity`
+- `match-contract` feature `hp-engine`: L2/L3/L1 span counters in `/metrics`
+- `match-wal` async bench (sample): ~11M records/s append+flush on M1 Pro (`wal_bench 100000`)
+
+Note: post–client_id map, `fair_compare` hp ~25–70× vs core depending on machine load; always require fill_rate≈0.5.
+
 No extra optimization pass required for this run.

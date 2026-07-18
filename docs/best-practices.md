@@ -21,6 +21,9 @@
 | 等待策略可配置 | Aeron `IdleStrategy` | `WaitStrategy::{BusySpin,Yield}` + `poll` | ✅ |
 | 观测与正确性分离 | 工程通识 | `match-core` golden；`match-bench` 测 hp | ✅ |
 | CPU 绑核 | DPDK / Aeron 部署实践 | `affinity` 模块 + 运维说明（可选 `core_affinity`） | ✅ 文档/API |
+| 最优价缓存 + Level 池 | perpetual_exchange / 撮核通识 | `Book` best_* + level_pool | ✅ |
+| ART / 字节 radix 档位索引 | perpetual_exchange ART | `--features art`（`ArtAskIndex`/`ArtBidIndex`） | ✅ 可选 |
+| 异步批写持久化 | perpetual_exchange persistence | `match-wal` Async 缓冲 + flush | ✅ 实验 |
 | 零拷贝 IPC | Aeron Media Driver | 未做（同进程 SPSC 即可；跨进程二期） | ⏳ |
 | 内核旁路网卡 | DPDK / io_uring | 运维层，非本 crate 范围 | ⏳ |
 | 业务 quirk 复刻 | — | 刻意不做（干净语义轨） | N/A |

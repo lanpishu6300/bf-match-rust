@@ -27,7 +27,7 @@
 | L1 hp 微核 | 十～百 ns/单（合成负载） | ✅ `match-bench` / `fair_compare` |
 | L1 core（BigDecimal） | µs 级 | ✅ vs hp 对比 |
 | L2 进程内队列 | 百 ns～数 µs | ✅ SPSC；contract 仍用 tokio |
-| L3 校验+转换 | µs 级 | adapter 有；未做独立计时 |
+| L3 校验+转换 | µs 级 | adapter + `match.span.l3_adapt_ns_total`（`hp-engine`） |
 | L4 MQ+JSON | 常为 **百 µs～ms** | ⚠️ RMQ 未接通（见 `rmq-spike.md`） |
 
 **推论：** 在 L4 未优化前，把 L1 从 20ns 抠到 10ns，端到端几乎无感。下一刀应打在 **测量 L4/L3** 或 **拆 Gateway**。

@@ -10,10 +10,16 @@ path = "src/lib.rs"
 name = "match-contract"
 path = "src/main.rs"
 
+[features]
+default = []
+## Experimental: symbol workers use `match-core-hp` + L2/L3/L1 span metrics.
+hp-engine = ["dep:match-core-hp"]
+
 [dependencies]
 axum = "0.7"
 bigdecimal = { workspace = true }
 match-core = { path = "../match-core" }
+match-core-hp = { path = "../match-core-hp", optional = true }
 match-protocol = { path = "../match-protocol" }
 redis = { workspace = true }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

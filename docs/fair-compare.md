@@ -14,6 +14,8 @@
 export PATH="$HOME/.cargo/bin:$PATH"
 cd .
 cargo run -p match-bench --release --bin fair_compare -- --n 50000
+# ART index path (same fill_rate expected):
+cargo test -p match-core-hp --features art --test art_parity
 ```
 
 输出：stdout CSV + 校验 `fill_rate > 0`（否则 exit 1）。

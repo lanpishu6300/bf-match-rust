@@ -13,6 +13,7 @@ Rust port of the  contract matching engine (`java-contract-match`), structured a
 | [OSS best practices](docs/best-practices.md) | Disruptor / Aeron / Seastar → code mapping |
 | [E2E latency budget](docs/e2e-budget.md) | Layered bottleneck budget (L1–L4) |
 | [Fair compare protocol](docs/fair-compare.md) | Non-zero fill-rate microbench vs core / C++ |
+| [PE optimizations design](docs/specs/2026-07-18-pe-optimizations-design.md) | A→B→C: cache/ART, hp-engine spans, match-wal |
 | [L3 shadow validation](docs/l3-shadow.md) | Pre-prod shadow consume / offline replay |
 | [Symbol cutover runbook](docs/cutover-runbook.md) | Per-symbol grey cut and rollback |
 | [RMQ spike notes](docs/rmq-spike.md) | NameServer client compatibility status |
@@ -54,6 +55,15 @@ cargo run -p match-bench --release --bin fair_compare -- --n 50000
 ```
 
 Prints CSV (`engine,scenario,n_orders,n_fills,fill_rate,...`). Exits non-zero if fill rate is near zero (rejects “fake peaks”). Protocol: [`docs/fair-compare.md`](docs/fair-compare.md). End-to-end layers: [`docs/e2e-budget.md`](docs/e2e-budget.md).
+
+Optional ART index (same fills as BTree):
+
+```bash
+cargo test -p match-core-hp --features art --test art_parity
+```
+
+Experimental contract path + spans: `cargo run -p match-contract --features hp-engine`.  
+Async WAL microbench: `cargo run -p match-wal --release --bin wal_bench -- 100000`.
 
 ## match-contract
 

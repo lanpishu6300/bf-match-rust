@@ -217,6 +217,146 @@ impl Outbound {
             Err(e) => error!(error = %e, "redis lock poisoned"),
         }
     }
+
+    /// Experimental hp-engine outbound: map [`HpEvent`] → push JSON (Topic-compatible shape).
+    #[cfg(feature = "hp-engine")]
+    pub fn handle_hp_events(
+        &self,
+        symbol: &str,
+        events: &[match_core_hp::HpEvent],
+        engine: &match_core_hp::HpEngine,
+        scale: &match_core_hp::SymbolScale,
+    ) {
+        use match_core_hp::{from_lot, from_tick, HpEvent};
+
+        let mut push_batch: Vec<PushOrder> = Vec::new();
+        for event in events {
+            match event {
+                HpEvent::Fill {
+                    maker_id,
+                    taker_id,
+                    price_tick,
+                    qty_lot,
+                } => {
+                    telemetry::record_fill();
+                    let price = from_tick(scale, *price_tick);
+                    let qty = from_lot(scale, *qty_lot);
+                    let taker_rem = engine
+                        .book
+                        .store()
+                        .get(*taker_id)
+                        .map(|o| from_lot(scale, o.open_lot))
+                        .unwrap_or_else(|| "0".into());
+                    let maker_rem = engine
+                        .book
+                        .store()
+                        .get(*maker_id)
+                        .map(|o| from_lot(scale, o.open_lot))
+                        .unwrap_or_else(|| "0".into());
+                    push_batch.push(PushOrder {
+                        symbol_key: symbol.to_string(),
+                        trust_order_no: taker_id.to_string(),
+                        target_trust_order_no: Some(maker_id.to_string()),
+                        trust_price: price.clone(),
+                        deal_price: Some(price),
+                        remaining_number: taker_rem,
+                        target_remaining_number: Some(maker_rem),
+                        order_status: 2,
+                        target_order_status: Some(2),
+                        current_deal_number: Some(qty),
+                        reason: None,
+                    });
+                }
+                HpEvent::Revoke { id, .. } => {
+                    telemetry::record_order_cancelled();
+                    push_batch.push(PushOrder {
+                        symbol_key: symbol.to_string(),
+                        trust_order_no: id.to_string(),
+                        target_trust_order_no: None,
+                        trust_price: "0".into(),
+                        deal_price: None,
+                        remaining_number: "0".into(),
+                        target_remaining_number: None,
+                        order_status: match_protocol::ORDER_STATUS_REVOKE_SUCCESS as u8,
+                        target_order_status: None,
+                        current_deal_number: None,
+                        reason: Some("cancel".into()),
+                    });
+                }
+                HpEvent::Rest { .. } => {
+                    telemetry::record_order_placed();
+                }
+            }
+        }
+
+        if !push_batch.is_empty() {
+            self.send_push_orders(symbol, &push_batch);
+        }
+
+        self.maybe_push_hp_depth(symbol, engine, scale);
+    }
+
+    #[cfg(feature = "hp-engine")]
+    fn maybe_push_hp_depth(
+        &self,
+        symbol: &str,
+        engine: &match_core_hp::HpEngine,
+        scale: &match_core_hp::SymbolScale,
+    ) {
+        use match_core_hp::{from_lot, from_tick, Side as HpSide};
+
+        let interval = self.depth_push_interval_ms;
+        let now = now_ms();
+        if interval > 0 {
+            let mut last = self.last_depth_push_ms.lock().expect("depth throttle lock");
+            if let Some(prev) = last.get(symbol) {
+                if now.saturating_sub(*prev) < interval {
+                    debug!(symbol, "depth push throttled");
+                    return;
+                }
+            }
+            last.insert(symbol.to_string(), now);
+        }
+
+        let bids: Vec<DepthLevel> = engine
+            .book
+            .depth(HpSide::Buy, DEPTH_LEVELS)
+            .into_iter()
+            .map(|(tick, lot)| DepthLevel {
+                trust_price: from_tick(scale, tick),
+                cumulative_commission_quantity: from_lot(scale, lot),
+            })
+            .collect();
+        let asks: Vec<DepthLevel> = engine
+            .book
+            .depth(HpSide::Sell, DEPTH_LEVELS)
+            .into_iter()
+            .map(|(tick, lot)| DepthLevel {
+                trust_price: from_tick(scale, tick),
+                cumulative_commission_quantity: from_lot(scale, lot),
+            })
+            .collect();
+        let snap = DepthSnapshot {
+            symbol_key: symbol.to_string(),
+            bids,
+            asks,
+        };
+        let body = match serde_json::to_vec(&snap) {
+            Ok(b) => b,
+            Err(e) => {
+                error!(error = %e, "serialize hp depth failed");
+                return;
+            }
+        };
+        if let Err(e) = self.producer.send_no_deal(symbol, &body) {
+            warn!(error = %e, symbol, "no_deal send failed → error_queue");
+            self.on_send_fail(&body);
+        }
+        if let Err(e) = self.producer.send_deeps(symbol, &body) {
+            warn!(error = %e, symbol, "deeps send failed → error_queue");
+            self.on_send_fail(&body);
+        }
+    }
 }
 
 fn levels_to_dto(levels: Vec<(bigdecimal::BigDecimal, bigdecimal::BigDecimal)>) -> Vec<DepthLevel> {

@@ -884,6 +884,7 @@ dependencies = [
  "axum",
  "bigdecimal",
  "match-core",
+ "match-core-hp",
  "match-protocol",
  "redis",
  "reqwest",
@@ -943,6 +944,13 @@ dependencies = [
 [[package]]
 name = "match-spot"
 version = "0.1.0"
+
+[[package]]
+name = "match-wal"
+version = "0.1.0"
+dependencies = [
+ "thiserror 1.0.69",
+]
 
 [[package]]
 name = "matchers"

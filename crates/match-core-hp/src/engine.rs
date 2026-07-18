@@ -1,10 +1,13 @@
 use crate::book::Book;
 use crate::types::{HpCommand, HpEvent, HpOrder, Side};
+use std::collections::HashMap;
 
 /// High-performance matching engine (clean limit/market/cancel semantics).
 pub struct HpEngine {
     pub book: Book,
     events: Vec<HpEvent>,
+    /// Maps inbound `client_id` / trust_order_no → slot id (for cancel by external id).
+    client_to_id: HashMap<u64, u64>,
 }
 
 impl HpEngine {
@@ -12,6 +15,7 @@ impl HpEngine {
         Self {
             book: Book::new(),
             events: Vec::with_capacity(64),
+            client_to_id: HashMap::new(),
         }
     }
 
@@ -19,6 +23,7 @@ impl HpEngine {
         Self {
             book: Book::with_capacity(order_cap),
             events: Vec::with_capacity(event_cap),
+            client_to_id: HashMap::with_capacity(order_cap),
         }
     }
 
@@ -46,8 +51,13 @@ impl HpEngine {
     }
 
     fn on_cancel(&mut self, id: u64) {
-        if self.book.cancel(id) {
-            self.events.push(HpEvent::Revoke { id, reason: 0 });
+        let slot = self.client_to_id.remove(&id).unwrap_or(id);
+        if self.book.cancel(slot) {
+            self.client_to_id.retain(|_, v| *v != slot);
+            self.events.push(HpEvent::Revoke {
+                id: slot,
+                reason: 0,
+            });
         }
     }
 
@@ -65,6 +75,7 @@ impl HpEngine {
             client_id,
         };
         let taker_id = self.book.store_mut().insert(order);
+        self.client_to_id.insert(client_id, taker_id);
 
         match side {
             Side::Buy => self.match_buy(taker_id, Some(price_tick), None),
@@ -89,6 +100,7 @@ impl HpEngine {
         } else {
             // Fully filled as taker; drop slot if still present.
             self.book.store_mut().remove(taker_id);
+            self.client_to_id.remove(&client_id);
         }
     }
 
@@ -113,6 +125,7 @@ impl HpEngine {
             client_id,
         };
         let taker_id = self.book.store_mut().insert(order);
+        self.client_to_id.insert(client_id, taker_id);
 
         match side {
             Side::Buy => self.match_buy(taker_id, None, max_levels),
@@ -121,6 +134,7 @@ impl HpEngine {
 
         // Market never rests; drop leftover taker slot.
         self.book.store_mut().remove(taker_id);
+        self.client_to_id.remove(&client_id);
     }
 
     /// Match a buy taker. `limit_tick = None` means market (no price cap).
@@ -154,6 +168,12 @@ impl HpEngine {
                 break;
             }
             let fill_qty = maker_open.min(taker_open);
+            let maker_client = self
+                .book
+                .store()
+                .get(maker_id)
+                .map(|o| o.client_id)
+                .unwrap_or(0);
             // Maker price.
             self.events.push(HpEvent::Fill {
                 maker_id,
@@ -164,7 +184,9 @@ impl HpEngine {
             if let Some(taker) = self.book.store_mut().get_mut(taker_id) {
                 taker.open_lot -= fill_qty;
             }
-            self.book.fill_order(maker_id, fill_qty);
+            if self.book.fill_order(maker_id, fill_qty).is_none() && maker_client != 0 {
+                self.client_to_id.remove(&maker_client);
+            }
         }
     }
 
@@ -199,6 +221,12 @@ impl HpEngine {
                 break;
             }
             let fill_qty = maker_open.min(taker_open);
+            let maker_client = self
+                .book
+                .store()
+                .get(maker_id)
+                .map(|o| o.client_id)
+                .unwrap_or(0);
             self.events.push(HpEvent::Fill {
                 maker_id,
                 taker_id,
@@ -208,7 +236,9 @@ impl HpEngine {
             if let Some(taker) = self.book.store_mut().get_mut(taker_id) {
                 taker.open_lot -= fill_qty;
             }
-            self.book.fill_order(maker_id, fill_qty);
+            if self.book.fill_order(maker_id, fill_qty).is_none() && maker_client != 0 {
+                self.client_to_id.remove(&maker_client);
+            }
         }
     }
 }
