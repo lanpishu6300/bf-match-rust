@@ -24,3 +24,22 @@ impl IdGenerator for AtomicU64IdGenerator {
         self.next.fetch_add(1, Ordering::Relaxed)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn atomic_generator_starts_at_given_value_and_increments() {
+        let gen = AtomicU64IdGenerator::new(10);
+        assert_eq!(gen.next(), 10);
+        assert_eq!(gen.next(), 11);
+    }
+
+    #[test]
+    fn default_generator_starts_at_zero() {
+        let gen = AtomicU64IdGenerator::default();
+        assert_eq!(gen.next(), 0);
+        assert_eq!(gen.next(), 1);
+    }
+}

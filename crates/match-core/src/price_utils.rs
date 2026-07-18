@@ -16,3 +16,25 @@ pub fn get_average_price(
         .with_scale_round(16, RoundingMode::HalfDown)
         .normalized()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    fn dec(s: &str) -> BigDecimal {
+        BigDecimal::from_str(s).unwrap()
+    }
+
+    #[test]
+    fn weighted_average_matches_java_half_down() {
+        let avg = get_average_price(&dec("1"), &dec("100"), &dec("1"), &dec("102"));
+        assert_eq!(avg, dec("101"));
+    }
+
+    #[test]
+    fn zero_total_quantity_returns_zero() {
+        let avg = get_average_price(&BigDecimal::zero(), &BigDecimal::zero(), &BigDecimal::zero(), &BigDecimal::zero());
+        assert_eq!(avg, BigDecimal::zero());
+    }
+}

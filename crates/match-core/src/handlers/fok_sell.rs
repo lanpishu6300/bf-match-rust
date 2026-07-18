@@ -244,3 +244,26 @@ fn rollback_fok_sell(
     });
     FokWalk::Fail(revoke)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    fn dec(s: &str) -> BigDecimal {
+        BigDecimal::from_str(s).unwrap()
+    }
+
+    #[test]
+    fn walk_exits_without_rollback_when_next_level_does_not_cross() {
+        let mut book = OrderBook::new();
+        book.insert(BbOrder::test_limit(Side::Buy, dec("95"), "b1", 1, "2"));
+        let sell = BbOrder::test_fok(Side::Sell, dec("100"), "s1", 1, "5");
+        book.insert(sell.clone());
+
+        match fok_sell_walk(&mut book, sell.clone(), sell, Vec::new(), Vec::new()) {
+            FokWalk::Done(events) => assert!(events.is_empty()),
+            FokWalk::Fail(_) => panic!("expected done without rollback"),
+        }
+    }
+}

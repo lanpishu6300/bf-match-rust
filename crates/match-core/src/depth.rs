@@ -73,4 +73,23 @@ mod tests {
         let levels = depth_levels_from_orders(vec![o], 20);
         assert!(levels.is_empty());
     }
+
+    #[test]
+    fn limit_zero_returns_empty() {
+        let orders = vec![BbOrder::test_limit(Side::Buy, dec("100"), "1", 1, "1")];
+        assert!(depth_levels_from_orders(orders, 0).is_empty());
+    }
+
+    #[test]
+    fn stops_at_limit_without_aggregating_beyond() {
+        let orders = vec![
+            BbOrder::test_limit(Side::Sell, dec("100"), "1", 1, "1"),
+            BbOrder::test_limit(Side::Sell, dec("101"), "2", 2, "1"),
+            BbOrder::test_limit(Side::Sell, dec("102"), "3", 3, "1"),
+        ];
+        let levels = depth_levels_from_orders(orders, 2);
+        assert_eq!(levels.len(), 2);
+        assert_eq!(levels[0].0, dec("100"));
+        assert_eq!(levels[1].0, dec("101"));
+    }
 }

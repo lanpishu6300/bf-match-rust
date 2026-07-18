@@ -144,3 +144,151 @@ pub fn handle_market_sell(book: &mut OrderBook, order: BbOrder) -> Vec<MatchEven
     }
     events
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    fn dec(s: &str) -> BigDecimal {
+        BigDecimal::from_str(s).unwrap()
+    }
+
+    #[test]
+    fn market_buy_stops_without_progress_when_best_sell_is_market() {
+        let mut book = OrderBook::new();
+        let mut market_sell = BbOrder::test_market(Side::Sell, "s_mkt", 1, "1");
+        market_sell.trust_price = dec("100");
+        book.insert(market_sell);
+
+        let mut market_buy = BbOrder::test_market(Side::Buy, "b_mkt", 2, "1");
+        market_buy.gear = Some(5);
+        let events = handle_market_buy(&mut book, market_buy);
+
+        assert!(events.iter().all(|e| !matches!(e, MatchEvent::Fill { .. })));
+    }
+
+    #[test]
+    fn market_sell_stops_when_rather_than_returns_none() {
+        let mut book = OrderBook::new();
+        let mut market_sell = BbOrder::test_market(Side::Sell, "s_mkt", 1, "1");
+        market_sell.gear = Some(5);
+        book.insert(market_sell.clone());
+
+        let events = handle_market_sell(&mut book, market_sell);
+        assert!(events.iter().all(|e| !matches!(e, MatchEvent::Fill { .. })));
+    }
+
+    #[test]
+    fn market_buy_stops_when_best_buy_is_no_longer_market() {
+        let mut book = OrderBook::new();
+        book.insert(BbOrder::test_limit(Side::Buy, dec("100"), "b_rest", 1, "5"));
+        book.insert(BbOrder::test_limit(Side::Sell, dec("100"), "s1", 2, "1"));
+        let market_buy = BbOrder::test_market(Side::Buy, "b_mkt", 3, "1");
+        let events = handle_market_buy(&mut book, market_buy);
+
+        assert_eq!(events.len(), 1);
+        assert!(matches!(&events[0], MatchEvent::Fill { .. }));
+        assert_eq!(book.best(Side::Buy).unwrap().trust_order_no, "b_rest");
+    }
+
+    #[test]
+    fn market_buy_revokes_when_sell_book_becomes_empty() {
+        let mut book = OrderBook::new();
+        let mut market_buy = BbOrder::test_market(Side::Buy, "b_mkt", 1, "1");
+        market_buy.gear = Some(5);
+        let events = handle_market_buy(&mut book, market_buy);
+
+        assert!(events.iter().any(|e| matches!(
+            e,
+            MatchEvent::Revoke {
+                reason,
+                ..
+            } if reason == "market_empty"
+        )));
+    }
+
+    #[test]
+    fn market_sell_revokes_when_buy_book_becomes_empty() {
+        let mut book = OrderBook::new();
+        let mut market_sell = BbOrder::test_market(Side::Sell, "s_mkt", 1, "1");
+        market_sell.gear = Some(5);
+        let events = handle_market_sell(&mut book, market_sell);
+
+        assert!(events.iter().any(|e| matches!(
+            e,
+            MatchEvent::Revoke {
+                reason,
+                ..
+            } if reason == "market_empty"
+        )));
+    }
+
+    #[test]
+    fn market_buy_loop_continues_while_market_order_remains() {
+        let mut book = OrderBook::new();
+        book.insert(BbOrder::test_limit(Side::Sell, dec("100"), "s1", 1, "1"));
+        book.insert(BbOrder::test_limit(Side::Sell, dec("101"), "s2", 2, "1"));
+        let mut market_buy = BbOrder::test_market(Side::Buy, "b_mkt", 3, "2");
+        market_buy.gear = Some(5);
+        let events = handle_market_buy(&mut book, market_buy);
+
+        assert_eq!(events.len(), 2);
+        assert!(matches!(&events[0], MatchEvent::Fill { .. }));
+        assert!(matches!(&events[1], MatchEvent::Fill { .. }));
+    }
+
+    #[test]
+    fn market_sell_loop_continues_while_market_order_remains() {
+        let mut book = OrderBook::new();
+        book.insert(BbOrder::test_limit(Side::Buy, dec("100"), "b1", 1, "1"));
+        book.insert(BbOrder::test_limit(Side::Buy, dec("99"), "b2", 2, "1"));
+        let mut market_sell = BbOrder::test_market(Side::Sell, "s_mkt", 3, "2");
+        market_sell.gear = Some(5);
+        let events = handle_market_sell(&mut book, market_sell);
+
+        assert_eq!(events.len(), 2);
+        assert!(matches!(&events[0], MatchEvent::Fill { .. }));
+        assert!(matches!(&events[1], MatchEvent::Fill { .. }));
+    }
+
+    #[test]
+    fn market_buy_stops_when_best_buy_is_different_market_order() {
+        let mut book = OrderBook::new();
+        book.insert(BbOrder::test_limit(Side::Sell, dec("100"), "s1", 1, "1"));
+        let mut first = BbOrder::test_market(Side::Buy, "b_first", 2, "1");
+        first.trust_price = BigDecimal::from(MARKET_BUY_TRUST_PRICE);
+        book.insert(first);
+        let second = BbOrder::test_market(Side::Buy, "b_second", 3, "1");
+        let events = handle_market_buy(&mut book, second);
+
+        assert!(events.is_empty());
+        assert_eq!(book.best(Side::Buy).unwrap().trust_order_no, "b_first");
+    }
+
+    #[test]
+    fn market_sell_stops_when_best_sell_is_no_longer_market() {
+        let mut book = OrderBook::new();
+        book.insert(BbOrder::test_limit(Side::Sell, dec("100"), "s_rest", 1, "5"));
+        book.insert(BbOrder::test_limit(Side::Buy, dec("100"), "b1", 2, "1"));
+        let market_sell = BbOrder::test_market(Side::Sell, "s_mkt", 3, "1");
+        let events = handle_market_sell(&mut book, market_sell);
+
+        assert_eq!(events.len(), 1);
+        assert!(matches!(&events[0], MatchEvent::Fill { .. }));
+        assert_eq!(book.best(Side::Sell).unwrap().trust_order_no, "s_rest");
+    }
+
+    #[test]
+    fn market_sell_stops_when_best_sell_is_different_market_order() {
+        let mut book = OrderBook::new();
+        book.insert(BbOrder::test_limit(Side::Buy, dec("100"), "b1", 1, "1"));
+        let first = BbOrder::test_market(Side::Sell, "s_first", 2, "1");
+        book.insert(first);
+        let second = BbOrder::test_market(Side::Sell, "s_second", 3, "1");
+        let events = handle_market_sell(&mut book, second);
+
+        assert!(events.is_empty());
+        assert_eq!(book.best(Side::Sell).unwrap().trust_order_no, "s_first");
+    }
+}
