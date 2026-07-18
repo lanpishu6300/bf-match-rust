@@ -205,4 +205,89 @@ mod tests {
         };
         assert!(diff_outcomes(&[e], &[a]).is_empty());
     }
+
+    #[test]
+    fn decimals_equal_falls_back_to_string() {
+        assert!(decimals_equal("not-a-number", "not-a-number"));
+        assert!(!decimals_equal("x", "y"));
+    }
+
+    #[test]
+    fn outcome_mismatches_and_kind_mismatch() {
+        let fill = OutcomeEvent::Fill {
+            taker_order_no: "b1".into(),
+            maker_order_no: "s1".into(),
+            price: "100".into(),
+            qty: "1".into(),
+            taker_remaining: "0".into(),
+            maker_remaining: "0".into(),
+            taker_status: 1,
+            maker_status: 1,
+        };
+        let fill2 = OutcomeEvent::Fill {
+            taker_order_no: "b2".into(),
+            maker_order_no: "s2".into(),
+            price: "101".into(),
+            qty: "2".into(),
+            taker_remaining: "1".into(),
+            maker_remaining: "1".into(),
+            taker_status: 2,
+            maker_status: 2,
+        };
+        assert!(!diff_outcomes(&[fill.clone()], &[fill2]).is_empty());
+
+        let rev = OutcomeEvent::Revoke {
+            order_no: "r1".into(),
+            remaining: "1".into(),
+            reason: "x".into(),
+        };
+        let rev2 = OutcomeEvent::Revoke {
+            order_no: "r2".into(),
+            remaining: "2".into(),
+            reason: "y".into(),
+        };
+        assert!(!diff_outcomes(&[rev.clone()], &[rev2]).is_empty());
+        assert!(!diff_outcomes(&[fill.clone()], &[rev.clone()]).is_empty());
+        assert!(!diff_outcomes(&[rev], &[fill.clone()]).is_empty());
+        assert!(!diff_outcomes(&[fill.clone()], &[]).is_empty());
+        assert!(!diff_outcomes(&[], &[fill]).is_empty());
+    }
+
+    #[test]
+    fn depth_and_replay_diff() {
+        let ok = DepthCheck {
+            seq: 1,
+            symbol: "btcusdt".into(),
+            expected_bids: vec![["100".into(), "1".into()]],
+            actual_bids: vec![["100.0".into(), "1.0".into()]],
+            expected_asks: vec![],
+            actual_asks: vec![],
+        };
+        assert!(diff_depth_check(&ok).is_none());
+
+        let bad = DepthCheck {
+            seq: 2,
+            symbol: "btcusdt".into(),
+            expected_bids: vec![["100".into(), "1".into()]],
+            actual_bids: vec![["99".into(), "1".into()]],
+            expected_asks: vec![["200".into(), "1".into()]],
+            actual_asks: vec![],
+        };
+        assert!(diff_depth_check(&bad).is_some());
+
+        let collected = ReplayCollected {
+            expected_outcomes: vec![],
+            actual_outcomes: vec![],
+            depth_checks: vec![bad],
+        };
+        assert!(!diff_replay(&collected).is_empty());
+    }
+
+    #[test]
+    fn levels_equal_length_mismatch() {
+        assert!(!levels_equal(
+            &[["1".into(), "1".into()]],
+            &[["1".into(), "1".into()], ["2".into(), "2".into()]]
+        ));
+    }
 }

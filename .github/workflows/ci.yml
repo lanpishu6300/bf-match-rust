@@ -42,3 +42,23 @@ jobs:
 
       - name: WAL unit tests
         run: cargo test -p match-wal
+
+  coverage:
+    name: branch coverage 100%
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install nightly + llvm-tools
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: llvm-tools-preview
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Branch coverage gate (100%)
+        run: bash scripts/check-branch-coverage.sh

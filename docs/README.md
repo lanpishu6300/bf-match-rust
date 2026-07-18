@@ -7,6 +7,7 @@ Self-contained docs for the **match-rust** GitHub repository (no links outside t
 | Doc | Audience |
 |-----|----------|
 | [ARCHITECTURE.md](./ARCHITECTURE.md) | Contributors — crate boundaries |
+| [COVERAGE.md](./COVERAGE.md) | 100% branch coverage gate |
 | [../README.md](../README.md) | Quick start / features |
 | [../CONTRIBUTING.md](../CONTRIBUTING.md) | How to change code |
 | [../CHANGELOG.md](../CHANGELOG.md) | Releases |

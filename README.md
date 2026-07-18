@@ -143,6 +143,7 @@ Full index: **[`docs/README.md`](docs/README.md)**
 | [Equivalence design](docs/specs/2026-07-17-rust-match-engines-design.md) | Protocol / cutover |
 | [HP design](docs/specs/2026-07-18-match-core-hp-design.md) | Fixed-point / price-level |
 | [PE optimizations](docs/specs/2026-07-18-pe-optimizations-design.md) | Cache / ART / wal A→B→C |
+| [Coverage policy](docs/COVERAGE.md) | 100% branch gate (protocol/core/hp/wal) |
 | [OSS best practices](docs/best-practices.md) | Disruptor / Aeron / Seastar mapping |
 | [Cutover runbook](docs/cutover-runbook.md) | Per-symbol grey release |
 | [RMQ spike](docs/rmq-spike.md) | RocketMQ status |

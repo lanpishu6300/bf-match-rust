@@ -1,6 +1,6 @@
 # match-rust — common maintainer targets (inspired by perpetual_exchange layout)
 
-.PHONY: help test test-art clippy fmt fair bench wal-bench run-local ci clean
+.PHONY: help test test-art clippy fmt fair bench wal-bench run-local ci cov cov-html clean
 
 help:
 	@echo "Targets:"
@@ -12,6 +12,8 @@ help:
 	@echo "  bench       criterion engine_cmp (sample-size 20)"
 	@echo "  wal-bench   match-wal async throughput"
 	@echo "  run-local   match-contract memory transport"
+	@echo "  cov         100% branch gate (nightly llvm-cov)"
+	@echo "  cov-html    HTML coverage report"
 	@echo "  ci          fmt + clippy + test + test-art + fair"
 	@echo "  clean       cargo clean"
 
@@ -42,6 +44,15 @@ run-local:
 	cargo run -p match-contract
 
 ci: fmt clippy test test-art fair
+
+# Requires: rustup toolchain install nightly -c llvm-tools-preview
+#           cargo install cargo-llvm-cov
+cov:
+	bash scripts/check-branch-coverage.sh
+
+cov-html:
+	cargo +nightly llvm-cov -p match-protocol -p match-core -p match-core-hp \
+		--branch --ignore-filename-regex '(tests/)' --html --output-dir target/llvm-cov/html
 
 clean:
 	cargo clean

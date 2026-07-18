@@ -72,6 +72,8 @@ pub struct Wal {
     tx: SyncSender<Msg>,
     join: Option<JoinHandle<()>>,
     mode: WalMode,
+    /// When true, [`Drop`] skips sending `Shutdown` (tests only).
+    skip_shutdown: bool,
 }
 
 impl Wal {
@@ -87,6 +89,7 @@ impl Wal {
             tx,
             join: Some(join),
             mode,
+            skip_shutdown: false,
         })
     }
 
@@ -121,8 +124,27 @@ impl Wal {
 
 impl Drop for Wal {
     fn drop(&mut self) {
-        let _ = self.tx.send(Msg::Shutdown);
+        if !self.skip_shutdown {
+            let _ = self.tx.send(Msg::Shutdown);
+        }
         if let Some(j) = self.join.take() {
+            let _ = j.join();
+        }
+    }
+}
+
+#[cfg(test)]
+impl Wal {
+    /// Drop the sender without `Shutdown` (coverage: flusher `Disconnected` path).
+    fn drop_sender_without_shutdown(mut self) {
+        self.skip_shutdown = true;
+        let join = self.join.take();
+        let (dead_tx, dead_rx) = mpsc::sync_channel(1);
+        drop(dead_rx);
+        // Replace sender; old `tx` drops → flusher sees Disconnected.
+        self.tx = dead_tx;
+        drop(self);
+        if let Some(j) = join {
             let _ = j.join();
         }
     }
@@ -219,6 +241,52 @@ mod tests {
 
         let bytes = fs::read(&path).unwrap();
         assert_eq!(bytes.len(), 100 * 33);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn disconnect_while_buffered_hits_disconnected_arm() {
+        let dir = std::env::temp_dir().join(format!("match-wal-disc-{}", std::process::id()));
+        let _ = fs::create_dir_all(&dir);
+        let path = dir.join("d.wal");
+        let _ = fs::remove_file(&path);
+
+        let wal = Wal::open(&path, WalMode::Async, 4096).unwrap();
+        for i in 0..80 {
+            wal.append(WalRecord {
+                kind: RecordKind::Fill,
+                id_a: i,
+                id_b: i + 1,
+                price_tick: 1,
+                qty_lot: 1,
+            })
+            .unwrap();
+        }
+        // Give flusher time to buffer without Shutdown, then disconnect sender.
+        thread::sleep(Duration::from_millis(5));
+        wal.drop_sender_without_shutdown();
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn sync_append_closed_when_flusher_dead() {
+        let dir = std::env::temp_dir().join(format!("match-wal-sync-dead-{}", std::process::id()));
+        let _ = fs::create_dir_all(&dir);
+        let blocker = dir.join("file");
+        fs::write(&blocker, b"x").unwrap();
+        let path = blocker.join("x.wal");
+        let wal = Wal::open(&path, WalMode::Sync, 8).unwrap();
+        thread::sleep(Duration::from_millis(20));
+        let err = wal.append(WalRecord {
+            kind: RecordKind::Cancel,
+            id_a: 1,
+            id_b: 0,
+            price_tick: 0,
+            qty_lot: 0,
+        });
+        assert!(matches!(err, Err(WalError::Closed)));
+        // Drop may also hit Closed on flush ack path.
+        drop(wal);
         let _ = fs::remove_dir_all(&dir);
     }
 }
