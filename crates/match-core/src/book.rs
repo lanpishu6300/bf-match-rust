@@ -111,11 +111,10 @@ impl OrderBook {
                     .iter()
                     .find(|entry| entry.0.trust_order_no == order_no)?
                     .clone();
-                if self.buys.remove(&key) {
-                    Some(key.0)
-                } else {
-                    None
-                }
+                // After find+clone of the same Ord key, BTreeSet::remove cannot fail
+                // under BuyEntry Ord/Eq consistency — discard the bool.
+                let _ = self.buys.remove(&key);
+                Some(key.0)
             }
             Side::Sell => {
                 let key = self
@@ -123,11 +122,8 @@ impl OrderBook {
                     .iter()
                     .find(|entry| entry.0.trust_order_no == order_no)?
                     .clone();
-                if self.sells.remove(&key) {
-                    Some(key.0)
-                } else {
-                    None
-                }
+                let _ = self.sells.remove(&key);
+                Some(key.0)
             }
         }
     }

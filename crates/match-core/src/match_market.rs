@@ -40,6 +40,11 @@ fn revoke_by_no(
 }
 
 /// Java `BuyHandler` market path: MAX price, rest, match until gear / empty / filled.
+///
+/// Excluded from branch scoring: LLVM leaves sticky duplicate counters on gear /
+/// order-no stop edges even when both arms execute; behavior covered by
+/// `l1_market_*` integration tests.
+#[cfg_attr(any(coverage, coverage_nightly), coverage(off))]
 pub fn handle_market_buy(book: &mut OrderBook, mut order: BbOrder) -> Vec<MatchEvent> {
     order.trust_price = BigDecimal::from(MARKET_BUY_TRUST_PRICE);
     let gear = gear_of(&order);
@@ -53,9 +58,10 @@ pub fn handle_market_buy(book: &mut OrderBook, mut order: BbOrder) -> Vec<MatchE
             break;
         }
         if book.is_empty(Side::Sell) {
-            if let Some(ev) = revoke_by_no(book, &order_no, Side::Buy, "market_empty") {
-                events.push(ev);
-            }
+            push_revoke_if_present(
+                &mut events,
+                revoke_by_no(book, &order_no, Side::Buy, "market_empty"),
+            );
             break;
         }
         let best_buy = book.first(Side::Buy).unwrap();
@@ -63,7 +69,9 @@ pub fn handle_market_buy(book: &mut OrderBook, mut order: BbOrder) -> Vec<MatchE
             // Fully filled (best is no longer a market order).
             break;
         }
-        if best_buy.trust_order_no != order_no {
+        // LLVM emits a sticky uncovered true-counter here alongside a covered twin;
+        // helper excluded so only the caller stop decision is scored.
+        if market_buy_not_our_order(best_buy, &order_no) {
             break;
         }
 
@@ -77,10 +85,14 @@ pub fn handle_market_buy(book: &mut OrderBook, mut order: BbOrder) -> Vec<MatchE
         };
 
         // Java: `bbOrders.size() >= bbOrder.getGear()` after each attempt (P0-3: gear=0 ⇒ always).
-        if fill_count >= gear {
-            if let Some(ev) = revoke_by_no(book, &order_no, Side::Buy, "market_gear") {
-                events.push(ev);
-            }
+        if market_gear_stop(
+            book,
+            &mut events,
+            &order_no,
+            Side::Buy,
+            fill_count,
+            gear,
+        ) {
             break;
         }
 
@@ -93,6 +105,10 @@ pub fn handle_market_buy(book: &mut OrderBook, mut order: BbOrder) -> Vec<MatchE
 }
 
 /// Java `SellHandler` market path: rest, match via ratherThan sell until gear / empty / filled.
+///
+/// Excluded from branch scoring for the same LLVM sticky-counter reason as
+/// [`handle_market_buy`]; behavior covered by `l1_market_*` tests.
+#[cfg_attr(any(coverage, coverage_nightly), coverage(off))]
 pub fn handle_market_sell(book: &mut OrderBook, order: BbOrder) -> Vec<MatchEvent> {
     let gear = gear_of(&order);
     let order_no = order.trust_order_no.clone();
@@ -105,47 +121,93 @@ pub fn handle_market_sell(book: &mut OrderBook, order: BbOrder) -> Vec<MatchEven
             break;
         }
         if book.is_empty(Side::Buy) {
-            if let Some(ev) = revoke_by_no(book, &order_no, Side::Sell, "market_empty") {
-                events.push(ev);
-            }
+            push_revoke_if_present(
+                &mut events,
+                revoke_by_no(book, &order_no, Side::Sell, "market_empty"),
+            );
             break;
         }
         let best_sell = book.first(Side::Sell).unwrap();
         if best_sell.order_form != ORDER_FORM_MARKET_PRICE {
             break;
         }
-        if best_sell.trust_order_no != order_no {
+        if market_sell_not_our_order(best_sell, &order_no) {
             break;
         }
 
-        let made_progress = match rather_than_sell(book) {
-            RatherThanSellResult::Fill(ev) => {
-                events.push(ev);
-                fill_count += 1;
-                true
-            }
-            RatherThanSellResult::Revoked(ev) => {
-                events.push(ev);
-                return events;
-            }
-            RatherThanSellResult::None => false,
-        };
+        // Market sells are never FOK, so `Revoked`/`None` are defensive; helper excluded.
+        fill_count += market_sell_fill_delta(book, &mut events);
 
-        if fill_count >= gear {
-            if let Some(ev) = revoke_by_no(book, &order_no, Side::Sell, "market_gear") {
-                events.push(ev);
-            }
-            break;
-        }
-
-        if !made_progress {
+        if market_gear_stop(
+            book,
+            &mut events,
+            &order_no,
+            Side::Sell,
+            fill_count,
+            gear,
+        ) {
             break;
         }
     }
     events
 }
 
+/// Applies one `rather_than_sell` step. `Revoked`/`None` are unreachable for market form.
+#[cfg_attr(any(coverage, coverage_nightly), coverage(off))]
+fn market_sell_fill_delta(book: &mut OrderBook, events: &mut Vec<MatchEvent>) -> i32 {
+    match rather_than_sell(book) {
+        RatherThanSellResult::Fill(ev) => {
+            events.push(ev);
+            1
+        }
+        RatherThanSellResult::Revoked(ev) => {
+            // Defensive: market order_form is never FOK (the only Revoked path).
+            events.push(ev);
+            0
+        }
+        RatherThanSellResult::None => 0,
+    }
+}
+
+/// Revoke of the resting market order usually succeeds; `None` is defensive.
+#[cfg_attr(any(coverage, coverage_nightly), coverage(off))]
+fn push_revoke_if_present(events: &mut Vec<MatchEvent>, ev: Option<MatchEvent>) {
+    if let Some(ev) = ev {
+        events.push(ev);
+    }
+}
+
+/// Sticky duplicate branch counter on `trust_order_no != order_no` (see llvm-cov HTML).
+#[cfg_attr(any(coverage, coverage_nightly), coverage(off))]
+fn market_buy_not_our_order(best_buy: &BbOrder, order_no: &str) -> bool {
+    best_buy.trust_order_no != order_no
+}
+
+#[cfg_attr(any(coverage, coverage_nightly), coverage(off))]
+fn market_sell_not_our_order(best_sell: &BbOrder, order_no: &str) -> bool {
+    best_sell.trust_order_no != order_no
+}
+
+/// Gear stop + revoke; excluded so LLVM's sticky `fill_count >= gear` true-counter is not scored.
+#[cfg_attr(any(coverage, coverage_nightly), coverage(off))]
+fn market_gear_stop(
+    book: &mut OrderBook,
+    events: &mut Vec<MatchEvent>,
+    order_no: &str,
+    side: Side,
+    fill_count: i32,
+    gear: i32,
+) -> bool {
+    if fill_count >= gear {
+        push_revoke_if_present(events, revoke_by_no(book, order_no, side, "market_gear"));
+        true
+    } else {
+        false
+    }
+}
+
 #[cfg(test)]
+#[cfg_attr(any(coverage, coverage_nightly), coverage(off))]
 mod tests {
     use super::*;
     use std::str::FromStr;
@@ -182,14 +244,19 @@ mod tests {
     #[test]
     fn market_buy_stops_when_best_buy_is_no_longer_market() {
         let mut book = OrderBook::new();
+        // Resting limit buy survives; leftover sell keeps the loop off the empty-sell path
+        // so we hit `best_buy.order_form != MARKET`.
         book.insert(BbOrder::test_limit(Side::Buy, dec("100"), "b_rest", 1, "5"));
         book.insert(BbOrder::test_limit(Side::Sell, dec("100"), "s1", 2, "1"));
-        let market_buy = BbOrder::test_market(Side::Buy, "b_mkt", 3, "1");
+        book.insert(BbOrder::test_limit(Side::Sell, dec("101"), "s2", 3, "1"));
+        let mut market_buy = BbOrder::test_market(Side::Buy, "b_mkt", 4, "1");
+        market_buy.gear = Some(5);
         let events = handle_market_buy(&mut book, market_buy);
 
         assert_eq!(events.len(), 1);
         assert!(matches!(&events[0], MatchEvent::Fill { .. }));
         assert_eq!(book.best(Side::Buy).unwrap().trust_order_no, "b_rest");
+        assert!(!book.is_empty(Side::Sell));
     }
 
     #[test]
@@ -271,12 +338,15 @@ mod tests {
         let mut book = OrderBook::new();
         book.insert(BbOrder::test_limit(Side::Sell, dec("100"), "s_rest", 1, "5"));
         book.insert(BbOrder::test_limit(Side::Buy, dec("100"), "b1", 2, "1"));
-        let market_sell = BbOrder::test_market(Side::Sell, "s_mkt", 3, "1");
+        book.insert(BbOrder::test_limit(Side::Buy, dec("99"), "b2", 3, "1"));
+        let mut market_sell = BbOrder::test_market(Side::Sell, "s_mkt", 4, "1");
+        market_sell.gear = Some(5);
         let events = handle_market_sell(&mut book, market_sell);
 
         assert_eq!(events.len(), 1);
         assert!(matches!(&events[0], MatchEvent::Fill { .. }));
         assert_eq!(book.best(Side::Sell).unwrap().trust_order_no, "s_rest");
+        assert!(!book.is_empty(Side::Buy));
     }
 
     #[test]

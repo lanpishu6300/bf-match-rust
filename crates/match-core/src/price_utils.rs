@@ -18,6 +18,7 @@ pub fn get_average_price(
 }
 
 #[cfg(test)]
+#[cfg_attr(any(coverage, coverage_nightly), coverage(off))]
 mod tests {
     use super::*;
     use std::str::FromStr;

@@ -26,6 +26,7 @@ impl IdGenerator for AtomicU64IdGenerator {
 }
 
 #[cfg(test)]
+#[cfg_attr(any(coverage, coverage_nightly), coverage(off))]
 mod tests {
     use super::*;
 

@@ -1,4 +1,8 @@
 //! Pure matching engine (no MQ/Redis/HTTP).
+#![cfg_attr(
+    any(coverage, coverage_nightly),
+    feature(coverage_attribute)
+)]
 
 mod book;
 mod depth;

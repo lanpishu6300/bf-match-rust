@@ -44,6 +44,7 @@ fn push_depth_level(
 }
 
 #[cfg(test)]
+#[cfg_attr(any(coverage, coverage_nightly), coverage(off))]
 mod tests {
     use super::*;
     use crate::order::Side;

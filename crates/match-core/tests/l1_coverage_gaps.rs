@@ -127,6 +127,51 @@ fn ioc_buy_fully_filled_does_not_revoke() {
 }
 
 #[test]
+fn ioc_buy_full_fill_with_leftover_sell_hits_empty_buy_break() {
+    // After IOC fully fills, sell liquidity remains so the loop hits is_empty(Buy).
+    let mut eng = Engine::new();
+    eng.on_order(BbOrder::test_limit(Side::Sell, dec("100"), "s1", 1, "1"));
+    eng.on_order(BbOrder::test_limit(Side::Sell, dec("101"), "s2", 2, "1"));
+    let events = eng.on_order(BbOrder::test_ioc(Side::Buy, dec("100"), "b_ioc", 3, "1"));
+
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| matches!(e, MatchEvent::Fill { .. }))
+            .count(),
+        1
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, MatchEvent::Revoke { .. }))
+    );
+    assert_eq!(eng.depth_levels("btcusdt", Side::Sell, 20).len(), 1);
+}
+
+#[test]
+fn ioc_sell_full_fill_with_leftover_buy_hits_empty_sell_break() {
+    let mut eng = Engine::new();
+    eng.on_order(BbOrder::test_limit(Side::Buy, dec("100"), "b1", 1, "1"));
+    eng.on_order(BbOrder::test_limit(Side::Buy, dec("99"), "b2", 2, "1"));
+    let events = eng.on_order(BbOrder::test_ioc(Side::Sell, dec("100"), "s_ioc", 3, "1"));
+
+    assert_eq!(
+        events
+            .iter()
+            .filter(|e| matches!(e, MatchEvent::Fill { .. }))
+            .count(),
+        1
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, MatchEvent::Revoke { .. }))
+    );
+    assert_eq!(eng.depth_levels("btcusdt", Side::Buy, 20).len(), 1);
+}
+
+#[test]
 fn ioc_sell_fully_filled_does_not_revoke() {
     let mut eng = Engine::new();
     eng.on_order(BbOrder::test_limit(Side::Buy, dec("100"), "b1", 1, "1"));
