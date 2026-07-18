@@ -49,3 +49,44 @@ fn rejects_empty_and_garbage() {
     assert!(to_tick(&s, "abc").is_err());
     assert!(to_lot(&s, "1.0000001").is_err());
 }
+
+#[test]
+fn accepts_plus_prefix_and_rejects_sign_only() {
+    let s = SymbolScale {
+        price_scale: 2,
+        qty_scale: 6,
+    };
+    assert_eq!(to_tick(&s, "+100.05").unwrap(), 10005);
+    assert!(to_tick(&s, "+").is_err());
+    assert!(to_tick(&s, "-").is_err());
+}
+
+#[test]
+fn rejects_non_digit_fraction() {
+    let s = SymbolScale {
+        price_scale: 2,
+        qty_scale: 6,
+    };
+    assert!(to_tick(&s, "1.2x").is_err());
+}
+
+#[test]
+fn scale_zero_formats_without_fraction() {
+    let s = SymbolScale {
+        price_scale: 0,
+        qty_scale: 0,
+    };
+    assert_eq!(to_tick(&s, "42").unwrap(), 42);
+    assert_eq!(from_tick(&s, 42), "42");
+    assert_eq!(from_lot(&s, 7), "7");
+}
+
+#[test]
+fn rejects_leading_dot_and_negative_fraction() {
+    let s = SymbolScale {
+        price_scale: 2,
+        qty_scale: 6,
+    };
+    assert!(to_tick(&s, ".25").is_err());
+    assert_eq!(to_tick(&s, "-0.01").unwrap(), -1);
+}

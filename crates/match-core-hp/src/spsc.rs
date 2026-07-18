@@ -130,10 +130,41 @@ mod tests {
         let mut out = Vec::new();
         assert_eq!(r.pop_n(&mut out, 10), 5);
         for (i, c) in out.iter().enumerate() {
-            match c {
-                HpCommand::Limit { client_id, .. } => assert_eq!(*client_id, i as u64),
-                _ => panic!("expected limit"),
+            if let HpCommand::Limit { client_id, .. } = c {
+                assert_eq!(*client_id, i as u64);
             }
         }
+    }
+
+    #[test]
+    fn try_pop_and_len_approx_edges() {
+        let r = SpscRing::with_capacity(4);
+        assert_eq!(r.len_approx(), 0);
+        assert!(r.try_pop().is_none());
+
+        r.try_push(HpCommand::Cancel { id: 1 }).unwrap();
+        r.try_push(HpCommand::Cancel { id: 2 }).unwrap();
+        assert_eq!(r.len_approx(), 2);
+
+        assert_eq!(
+            r.try_pop(),
+            Some(HpCommand::Cancel { id: 1 })
+        );
+        assert_eq!(
+            r.try_pop(),
+            Some(HpCommand::Cancel { id: 2 })
+        );
+        assert!(r.try_pop().is_none());
+        assert_eq!(r.len_approx(), 0);
+    }
+
+    #[test]
+    fn pop_n_zero_max_is_no_op() {
+        let r = SpscRing::with_capacity(4);
+        r.try_push(HpCommand::Cancel { id: 1 }).unwrap();
+        let mut out = Vec::new();
+        assert_eq!(r.pop_n(&mut out, 0), 0);
+        assert!(out.is_empty());
+        assert_eq!(r.len_approx(), 1);
     }
 }

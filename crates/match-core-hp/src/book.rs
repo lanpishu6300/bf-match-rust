@@ -247,3 +247,48 @@ impl Default for Book {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recycle_level_fills_then_stops_at_pool_cap() {
+        let mut b = Book::new();
+        for i in 0..260u64 {
+            let id = b.insert_limit(HpOrder::limit(Side::Buy, i as i64, 1, i));
+            assert!(b.cancel(id));
+        }
+        let id = b.insert_limit(HpOrder::limit(Side::Buy, 9999, 1, 9999));
+        assert!(b.cancel(id));
+        assert_eq!(b.best_bid(), None);
+    }
+
+    #[test]
+    fn fill_non_front_and_overfill_paths() {
+        let mut b = Book::new();
+        let id1 = b.insert_limit(HpOrder::limit(Side::Sell, 10, 2, 1));
+        let id2 = b.insert_limit(HpOrder::limit(Side::Sell, 10, 1, 2));
+        assert!(b.fill_order(id2, 1).is_none());
+        assert_eq!(b.front_id(Side::Sell, 10), Some(id1));
+        assert!(b.fill_order(id1, 99).is_none());
+        assert_eq!(b.best_ask(), None);
+    }
+
+    #[test]
+    fn default_book_is_empty() {
+        assert_eq!(Book::default().best_bid(), None);
+    }
+
+    #[test]
+    fn cancel_clamps_negative_level_total_after_overfill() {
+        let mut b = Book::new();
+        let id1 = b.insert_limit(HpOrder::limit(Side::Sell, 10, 2, 1));
+        let id2 = b.insert_limit(HpOrder::limit(Side::Sell, 10, 1, 2));
+        assert!(b.fill_order(id1, 5).is_none());
+        assert!(b.cancel(id2));
+        assert_eq!(b.best_ask(), None);
+    }
+
+    // `remove_from_level` early return when the level index entry is missing is defensive only.
+}

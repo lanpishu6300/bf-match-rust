@@ -98,3 +98,44 @@ fn rejects_excess_price_scale() {
     let err = from_bb_order(&o, &scale()).unwrap_err();
     assert!(matches!(err, AdapterError::Scale(_)));
 }
+
+#[test]
+fn rejects_unsupported_side_and_form() {
+    let mut o = base_order();
+    o.order_type = 0;
+    assert_eq!(from_bb_order(&o, &scale()).unwrap_err(), AdapterError::UnsupportedSide);
+
+    o = base_order();
+    o.order_form = match_protocol::ORDER_FORM_POST_ONLY;
+    assert_eq!(from_bb_order(&o, &scale()).unwrap_err(), AdapterError::UnsupportedForm);
+}
+
+#[test]
+fn rejects_invalid_id_and_timestamp() {
+    let mut o = base_order();
+    o.trust_order_no = "not-a-number".into();
+    assert_eq!(from_bb_order(&o, &scale()).unwrap_err(), AdapterError::InvalidOrderId);
+
+    o = base_order();
+    o.create_time = -1;
+    assert_eq!(from_bb_order(&o, &scale()).unwrap_err(), AdapterError::InvalidTimestamp);
+}
+
+#[test]
+fn market_gear_zero_or_negative_omits_max_levels() {
+    let mut o = base_order();
+    o.order_form = ORDER_FORM_MARKET_PRICE;
+    o.trust_price = BigDecimal::from(0);
+    o.gear = Some(0);
+    let cmd = from_bb_order(&o, &scale()).unwrap();
+    assert_eq!(
+        cmd,
+        HpCommand::Market {
+            side: Side::Buy,
+            qty_lot: 15000,
+            ts: 99,
+            max_levels: None,
+            client_id: 42,
+        }
+    );
+}

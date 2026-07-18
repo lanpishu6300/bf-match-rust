@@ -53,6 +53,7 @@ mod tests {
         {
             let err = pin_current_thread(0).unwrap_err();
             assert!(err.0.contains("affinity"));
+            assert!(format!("{err}").contains("affinity"));
         }
         #[cfg(feature = "affinity")]
         {

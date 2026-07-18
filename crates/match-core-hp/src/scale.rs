@@ -115,4 +115,26 @@ mod tests {
         assert_eq!(to_tick(&s, "-1.25").unwrap(), -125);
         assert_eq!(from_tick(&s, -125), "-1.25");
     }
+
+    #[test]
+    fn overflow_rejects_huge_magnitude() {
+        let s = SymbolScale {
+            price_scale: 0,
+            qty_scale: 0,
+        };
+        assert!(matches!(
+            to_tick(&s, "9223372036854775808"),
+            Err(ScaleError::Overflow)
+        ));
+    }
+
+    #[test]
+    fn format_fixed_positive_and_negative() {
+        let s = SymbolScale {
+            price_scale: 2,
+            qty_scale: 2,
+        };
+        assert_eq!(from_tick(&s, 100), "1.00");
+        assert_eq!(from_tick(&s, -100), "-1.00");
+    }
 }

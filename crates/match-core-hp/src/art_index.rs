@@ -347,4 +347,98 @@ mod tests {
         m.insert(110, Level::default());
         assert_eq!(m.best_tick(), Some(110));
     }
+
+    #[test]
+    fn insert_overwrites_same_tick() {
+        let mut m = ArtAskIndex::default();
+        m.insert(100, Level::default());
+        let mut lvl = Level::default();
+        lvl.total_lot = 9;
+        m.insert(100, lvl);
+        assert_eq!(m.get(100).unwrap().total_lot, 9);
+    }
+
+    #[test]
+    fn get_returns_none_for_missing_tick() {
+        let mut m = ArtAskIndex::default();
+        m.insert(100, Level::default());
+        assert!(m.get(101).is_none());
+        assert!(m.get_mut(101).is_none());
+        assert!(!m.contains(101));
+    }
+
+    #[test]
+    fn remove_missing_returns_none() {
+        let mut m = ArtBidIndex::default();
+        m.insert(50, Level::default());
+        assert!(m.remove(51).is_none());
+        assert!(m.remove(50).is_some());
+        assert!(m.remove(50).is_none());
+        assert!(m.best_tick().is_none());
+    }
+
+    #[test]
+    fn depth_stops_at_limit() {
+        let mut m = ArtAskIndex::default();
+        for tick in 10..20 {
+            m.insert(tick, Level::default());
+        }
+        assert_eq!(m.depth(3).len(), 3);
+    }
+
+    #[test]
+    fn split_inner_leaf_with_shared_byte_prefix() {
+        let mut m = ArtAskIndex::default();
+        m.insert(0x0000_0000_0100, Level::default());
+        m.insert(0x0000_0000_0101, Level::default());
+        assert!(m.contains(0x0000_0000_0100));
+        assert!(m.contains(0x0000_0000_0101));
+        assert_eq!(m.best_tick(), Some(0x0000_0000_0100));
+    }
+
+    #[test]
+    fn root_leaf_split_on_second_distinct_key() {
+        let mut m = ArtBidIndex::default();
+        m.insert(10, Level::default());
+        m.insert(20, Level::default());
+        assert_eq!(m.best_tick(), Some(20));
+        assert!(m.remove(10).is_some());
+        assert_eq!(m.best_tick(), Some(20));
+    }
+
+    #[test]
+    fn get_rejects_near_miss_keys() {
+        let mut m = ArtAskIndex::default();
+        m.insert(0x0000_0000_0100, Level::default());
+        m.insert(0x0000_0000_0200, Level::default());
+        assert!(m.get(0x0000_0000_0150).is_none());
+        assert!(m.get_mut(0x0000_0000_0150).is_none());
+    }
+
+    #[test]
+    fn split_child_leaf_under_inner_node() {
+        let mut m = ArtAskIndex::default();
+        m.insert(0x1000_0000_0000_0000, Level::default());
+        m.insert(0x2000_0000_0000_0000, Level::default());
+        m.insert(0x1000_0000_0000_0001, Level::default());
+        assert!(m.contains(0x1000_0000_0000_0000));
+        assert!(m.contains(0x1000_0000_0000_0001));
+        assert!(m.contains(0x2000_0000_0000_0000));
+        assert!(m.get(0x1500_0000_0000_0000).is_none());
+    }
+
+    #[test]
+    fn bid_depth_walk_stops_at_limit() {
+        let mut m = ArtBidIndex::default();
+        for tick in (0..8).map(|i| 100 + i) {
+            m.insert(tick, Level::default());
+        }
+        assert_eq!(m.depth(3).len(), 3);
+    }
+
+    #[test]
+    fn inner_default_node_is_inner() {
+        let n = Node::default();
+        assert!(matches!(n, Node::Inner { .. }));
+    }
 }
