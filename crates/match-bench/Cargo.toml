@@ -9,6 +9,7 @@ match-core = { path = "../match-core" }
 match-core-hp = { path = "../match-core-hp" }
 match-protocol = { path = "../match-protocol" }
 bigdecimal = { workspace = true }
+clap = { workspace = true }
 
 [dev-dependencies]
 criterion = { version = "0.5", features = ["html_reports"] }
@@ -16,3 +17,7 @@ criterion = { version = "0.5", features = ["html_reports"] }
 [[bench]]
 name = "engine_cmp"
 harness = false
+
+[[bin]]
+name = "fair_compare"
+path = "src/bin/fair_compare.rs"

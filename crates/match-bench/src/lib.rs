@@ -1,3 +1,4 @@
-//! Workload generators for comparing `match-core` vs `match-core-hp`.
+//! Workload generators and fair-compare metrics for `match-core` vs `match-core-hp`.
 
+pub mod metrics;
 pub mod workload;

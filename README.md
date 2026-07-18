@@ -11,6 +11,8 @@ Rust port of the  contract matching engine (`java-contract-match`), structured a
 | [Implementation plan](../docs/superpowers/plans/2026-07-17-rust-match-engines.md) | Equivalence-track task breakdown |
 | [HP implementation plan](../docs/superpowers/plans/2026-07-18-match-core-hp.md) | High-performance dual-track tasks (H0–H3) |
 | [OSS best practices](docs/best-practices.md) | Disruptor / Aeron / Seastar → code mapping |
+| [E2E latency budget](docs/e2e-budget.md) | Layered bottleneck budget (L1–L4) |
+| [Fair compare protocol](docs/fair-compare.md) | Non-zero fill-rate microbench vs core / C++ |
 | [L3 shadow validation](docs/l3-shadow.md) | Pre-prod shadow consume / offline replay |
 | [Symbol cutover runbook](docs/cutover-runbook.md) | Per-symbol grey cut and rollback |
 | [RMQ spike notes](docs/rmq-spike.md) | NameServer client compatibility status |
@@ -44,6 +46,14 @@ cargo bench -p match-bench --bench engine_cmp -- --sample-size 20
 ```
 
 Published numbers: [`docs/bench-results.md`](docs/bench-results.md) (target ≥5× on `cross_full` / `partial_walk`).
+
+### Fair compare (mandatory fill_rate > 0)
+
+```bash
+cargo run -p match-bench --release --bin fair_compare -- --n 50000
+```
+
+Prints CSV (`engine,scenario,n_orders,n_fills,fill_rate,...`). Exits non-zero if fill rate is near zero (rejects “fake peaks”). Protocol: [`docs/fair-compare.md`](docs/fair-compare.md). End-to-end layers: [`docs/e2e-budget.md`](docs/e2e-budget.md).
 
 ## match-contract
 

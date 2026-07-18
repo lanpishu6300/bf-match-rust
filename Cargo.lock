@@ -870,6 +870,7 @@ name = "match-bench"
 version = "0.1.0"
 dependencies = [
  "bigdecimal",
+ "clap",
  "criterion",
  "match-core",
  "match-core-hp",

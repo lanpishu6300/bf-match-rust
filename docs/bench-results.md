@@ -39,4 +39,17 @@ Spec target: ≥5× on `cross_full` and `partial_walk`.
 | `cross_full` | ≥5× | ~66.7× | PASS |
 | `partial_walk` | ≥5× | ~63.6× | PASS |
 
+## Fair compare (`fair_cross`, fill_rate must be > 0)
+
+```bash
+cargo run -p match-bench --release --bin fair_compare -- --n 50000
+```
+
+| engine | n_orders | n_fills | fill_rate | orders/s | ns/order | notes |
+|--------|----------|---------|-----------|----------|----------|-------|
+| match-core | 50000 | 25000 | 0.50 | ~764K | ~1308 | same machine as above |
+| match-core-hp | 50000 | 25000 | 0.50 | ~55M | ~18 | wall speedup ~72× vs core |
+
+Protocol: [`fair-compare.md`](fair-compare.md). Do not compare against zero-fill ART/SIMD peaks.
+
 No extra optimization pass required for this run.

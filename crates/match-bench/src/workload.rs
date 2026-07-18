@@ -55,6 +55,12 @@ pub fn rest_only(n: usize) -> (Vec<BbOrder>, Vec<HpCommand>) {
     (core, hp)
 }
 
+/// Fair-compare scenario (same as [`cross_full`]): N/2 sells @ 100.00 then N/2 buys @ 100.00.
+/// Expected: `n_fills ≈ n/2`, `fill_rate ≈ 0.5` (non-zero). See `docs/fair-compare.md`.
+pub fn fair_cross(n: usize) -> (Vec<BbOrder>, Vec<HpCommand>) {
+    cross_full(n)
+}
+
 /// Cross-full: rest `n/2` sells then `n/2` buys that fully fill (1:1).
 pub fn cross_full(n: usize) -> (Vec<BbOrder>, Vec<HpCommand>) {
     let half = n / 2;
