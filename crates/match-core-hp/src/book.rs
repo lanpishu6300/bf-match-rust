@@ -153,18 +153,18 @@ impl Book {
     fn level_mut(&mut self, side: Side, tick: i64) -> &mut Level {
         match side {
             Side::Buy => {
-                if !self.bids.contains(tick) {
-                    let lvl = self.take_level();
-                    self.bids.insert(tick, lvl);
+                if self.bids.contains(tick) {
+                    return self.bids.get_mut(tick).expect("contains");
                 }
-                self.bids.get_mut(tick).expect("just inserted")
+                let lvl = self.take_level();
+                self.bids.get_or_insert_with(tick, || lvl)
             }
             Side::Sell => {
-                if !self.asks.contains(tick) {
-                    let lvl = self.take_level();
-                    self.asks.insert(tick, lvl);
+                if self.asks.contains(tick) {
+                    return self.asks.get_mut(tick).expect("contains");
                 }
-                self.asks.get_mut(tick).expect("just inserted")
+                let lvl = self.take_level();
+                self.asks.get_or_insert_with(tick, || lvl)
             }
         }
     }

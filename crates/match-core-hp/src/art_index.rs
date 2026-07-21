@@ -379,6 +379,16 @@ impl LevelIndex for ArtAskIndex {
     fn depth(&self, n: usize) -> Vec<(i64, i64)> {
         self.map.depth_ask(n)
     }
+    fn get_or_insert_with<F>(&mut self, tick: i64, f: F) -> &mut Level
+    where
+        F: FnOnce() -> Level,
+    {
+        if self.map.contains(tick) {
+            return self.map.get_mut(tick).expect("contains");
+        }
+        self.map.insert(tick, f());
+        self.map.get_mut(tick).expect("just inserted")
+    }
 }
 
 #[derive(Debug, Default)]
@@ -407,6 +417,16 @@ impl LevelIndex for ArtBidIndex {
     }
     fn depth(&self, n: usize) -> Vec<(i64, i64)> {
         self.map.depth_bid(n)
+    }
+    fn get_or_insert_with<F>(&mut self, tick: i64, f: F) -> &mut Level
+    where
+        F: FnOnce() -> Level,
+    {
+        if self.map.contains(tick) {
+            return self.map.get_mut(tick).expect("contains");
+        }
+        self.map.insert(tick, f());
+        self.map.get_mut(tick).expect("just inserted")
     }
 }
 

@@ -2,41 +2,11 @@ use crate::book::Book;
 use crate::types::{HpCommand, HpEvent, HpOrder, Side};
 use std::collections::HashMap;
 
-/// Defensive store/book lookups that only fail under corrupt engine state.
-/// Entire module is excluded from coverage so untaken corrupt-state arms do not
-/// dilute branch totals (happy paths are still exercised via normal match tests).
-#[cfg_attr(coverage_nightly, coverage(off))]
-mod defensive {
-    use crate::order_store::OrderStore;
-
-    pub(super) fn open_lot_or_0(store: &OrderStore, id: u64) -> i64 {
-        store.get(id).map(|o| o.open_lot).unwrap_or(0)
-    }
-
-    pub(super) fn client_id_or_0(store: &OrderStore, id: u64) -> u64 {
-        store.get(id).map(|o| o.client_id).unwrap_or(0)
-    }
-
-    pub(super) fn debit_taker(store: &mut OrderStore, taker_id: u64, fill_qty: i64) {
-        if let Some(taker) = store.get_mut(taker_id) {
-            taker.open_lot -= fill_qty;
-        }
-    }
-
-    pub(super) fn qty_exhausted(maker_open: i64, taker_open: i64) -> bool {
-        maker_open <= 0 || taker_open <= 0
-    }
-
-    pub(super) fn remaining_open(store: &OrderStore, taker_id: u64) -> i64 {
-        store.get(taker_id).map(|o| o.open_lot).unwrap_or(0)
-    }
-}
-
 /// High-performance matching engine (clean limit/market/cancel semantics).
 pub struct HpEngine {
     pub book: Book,
     events: Vec<HpEvent>,
-    /// Maps inbound `client_id` / trust_order_no → slot id (for cancel by external id).
+    /// External order id → store slot.
     client_to_id: HashMap<u64, u64>,
 }
 
@@ -81,23 +51,26 @@ impl HpEngine {
     }
 
     fn on_cancel(&mut self, id: u64) {
+        // Resolve slot: external client_id first, else treat as store slot.
         let slot = self.client_to_id.remove(&id).unwrap_or(id);
+        let client_id = self
+            .book
+            .store()
+            .get(slot)
+            .map(|o| o.client_id)
+            .unwrap_or(id);
         if self.book.cancel(slot) {
-            self.drop_client_mappings_for_slot(slot);
+            // O(1): drop any remaining map entry (cancel-by-slot path).
+            self.client_to_id.remove(&client_id);
             self.events.push(HpEvent::Revoke {
                 id: slot,
-                client_id: id,
+                client_id,
                 reason: 0,
             });
         }
     }
 
-    #[cfg_attr(coverage_nightly, coverage(off))]
-    fn drop_client_mappings_for_slot(&mut self, slot: u64) {
-        self.client_to_id.retain(|_, v| *v != slot);
-    }
-
-    #[inline(never)]
+    #[cfg_attr(coverage_nightly, inline(never))]
     fn on_limit(&mut self, side: Side, price_tick: i64, qty_lot: i64, ts: u64, client_id: u64) {
         if qty_lot <= 0 {
             return;
@@ -118,11 +91,16 @@ impl HpEngine {
         self.client_to_id.insert(client_id, taker_id);
 
         match side {
-            Side::Buy => self.match_buy(taker_id, Some(price_tick), None),
-            Side::Sell => self.match_sell(taker_id, Some(price_tick), None),
+            Side::Buy => self.match_buy(taker_id, client_id, Some(price_tick), None),
+            Side::Sell => self.match_sell(taker_id, client_id, Some(price_tick), None),
         }
 
-        let remaining = defensive::remaining_open(self.book.store(), taker_id);
+        let remaining = self
+            .book
+            .store()
+            .get(taker_id)
+            .map(|o| o.open_lot)
+            .unwrap_or(0);
 
         if remaining > 0 {
             self.book.rest(taker_id);
@@ -134,13 +112,12 @@ impl HpEngine {
                 qty_lot: remaining,
             });
         } else {
-            // Fully filled as taker; drop slot if still present.
             self.book.store_mut().remove(taker_id);
             self.client_to_id.remove(&client_id);
         }
     }
 
-    #[inline(never)]
+    #[cfg_attr(coverage_nightly, inline(never))]
     fn on_market(
         &mut self,
         side: Side,
@@ -168,11 +145,16 @@ impl HpEngine {
         self.client_to_id.insert(client_id, taker_id);
 
         match side {
-            Side::Buy => self.match_buy(taker_id, None, max_fills),
-            Side::Sell => self.match_sell(taker_id, None, max_fills),
+            Side::Buy => self.match_buy(taker_id, client_id, None, max_fills),
+            Side::Sell => self.match_sell(taker_id, client_id, None, max_fills),
         }
 
-        let remaining = defensive::remaining_open(self.book.store(), taker_id);
+        let remaining = self
+            .book
+            .store()
+            .get(taker_id)
+            .map(|o| o.open_lot)
+            .unwrap_or(0);
         if remaining > 0 {
             self.events.push(HpEvent::Revoke {
                 id: taker_id,
@@ -185,16 +167,29 @@ impl HpEngine {
     }
 
     /// Match a buy taker. `limit_tick = None` means market (no price cap).
-    /// `max_fills` limits number of fills (match-core gear semantics).
-    #[inline(never)]
-    fn match_buy(&mut self, taker_id: u64, limit_tick: Option<i64>, max_fills: Option<u32>) {
+    #[cfg_attr(coverage_nightly, inline(never))]
+    fn match_buy(
+        &mut self,
+        taker_id: u64,
+        taker_client: u64,
+        limit_tick: Option<i64>,
+        max_fills: Option<u32>,
+    ) {
         let mut fill_count = 0u32;
-        let taker_client = defensive::client_id_or_0(self.book.store(), taker_id);
+        let mut taker_open = self
+            .book
+            .store()
+            .get(taker_id)
+            .map(|o| o.open_lot)
+            .unwrap_or(0);
         loop {
             if let Some(max) = max_fills {
                 if fill_count >= max {
                     break;
                 }
+            }
+            if taker_open <= 0 {
+                break;
             }
             let Some(ask_tick) = self.book.best_ask() else {
                 break;
@@ -204,25 +199,28 @@ impl HpEngine {
                     break;
                 }
             }
-            // Empty FIFO while best_* is set (corrupt) — covered by unit tests.
             let Some(maker_id) = self.book.front_id(Side::Sell, ask_tick) else {
                 break;
             };
-            let maker_open = defensive::open_lot_or_0(self.book.store(), maker_id);
-            let taker_open = defensive::open_lot_or_0(self.book.store(), taker_id);
-            if defensive::qty_exhausted(maker_open, taker_open) {
+            let Some(maker) = self.book.store().get(maker_id) else {
+                break;
+            };
+            let maker_open = maker.open_lot;
+            let maker_client = maker.client_id;
+            if maker_open <= 0 {
                 break;
             }
             let fill_qty = maker_open.min(taker_open);
-            let maker_client = defensive::client_id_or_0(self.book.store(), maker_id);
-            defensive::debit_taker(self.book.store_mut(), taker_id, fill_qty);
+            taker_open -= fill_qty;
+            if let Some(taker) = self.book.store_mut().get_mut(taker_id) {
+                taker.open_lot = taker_open;
+            }
             let maker_gone = self.book.fill_order(maker_id, fill_qty).is_none();
             let maker_open_after = if maker_gone {
                 0
             } else {
-                defensive::open_lot_or_0(self.book.store(), maker_id)
+                maker_open - fill_qty
             };
-            let taker_open_after = defensive::open_lot_or_0(self.book.store(), taker_id);
             self.events.push(HpEvent::Fill {
                 maker_id,
                 taker_id,
@@ -231,9 +229,9 @@ impl HpEngine {
                 price_tick: ask_tick,
                 qty_lot: fill_qty,
                 maker_open_lot: maker_open_after,
-                taker_open_lot: taker_open_after,
+                taker_open_lot: taker_open,
             });
-            if Self::should_drop_maker_client(maker_gone, maker_client) {
+            if maker_gone && maker_client != 0 {
                 self.client_to_id.remove(&maker_client);
             }
             fill_count += 1;
@@ -241,15 +239,29 @@ impl HpEngine {
     }
 
     /// Match a sell taker. `limit_tick = None` means market (no price floor).
-    #[inline(never)]
-    fn match_sell(&mut self, taker_id: u64, limit_tick: Option<i64>, max_fills: Option<u32>) {
+    #[cfg_attr(coverage_nightly, inline(never))]
+    fn match_sell(
+        &mut self,
+        taker_id: u64,
+        taker_client: u64,
+        limit_tick: Option<i64>,
+        max_fills: Option<u32>,
+    ) {
         let mut fill_count = 0u32;
-        let taker_client = defensive::client_id_or_0(self.book.store(), taker_id);
+        let mut taker_open = self
+            .book
+            .store()
+            .get(taker_id)
+            .map(|o| o.open_lot)
+            .unwrap_or(0);
         loop {
             if let Some(max) = max_fills {
                 if fill_count >= max {
                     break;
                 }
+            }
+            if taker_open <= 0 {
+                break;
             }
             let Some(bid_tick) = self.book.best_bid() else {
                 break;
@@ -262,21 +274,25 @@ impl HpEngine {
             let Some(maker_id) = self.book.front_id(Side::Buy, bid_tick) else {
                 break;
             };
-            let maker_open = defensive::open_lot_or_0(self.book.store(), maker_id);
-            let taker_open = defensive::open_lot_or_0(self.book.store(), taker_id);
-            if defensive::qty_exhausted(maker_open, taker_open) {
+            let Some(maker) = self.book.store().get(maker_id) else {
+                break;
+            };
+            let maker_open = maker.open_lot;
+            let maker_client = maker.client_id;
+            if maker_open <= 0 {
                 break;
             }
             let fill_qty = maker_open.min(taker_open);
-            let maker_client = defensive::client_id_or_0(self.book.store(), maker_id);
-            defensive::debit_taker(self.book.store_mut(), taker_id, fill_qty);
+            taker_open -= fill_qty;
+            if let Some(taker) = self.book.store_mut().get_mut(taker_id) {
+                taker.open_lot = taker_open;
+            }
             let maker_gone = self.book.fill_order(maker_id, fill_qty).is_none();
             let maker_open_after = if maker_gone {
                 0
             } else {
-                defensive::open_lot_or_0(self.book.store(), maker_id)
+                maker_open - fill_qty
             };
-            let taker_open_after = defensive::open_lot_or_0(self.book.store(), taker_id);
             self.events.push(HpEvent::Fill {
                 maker_id,
                 taker_id,
@@ -285,19 +301,13 @@ impl HpEngine {
                 price_tick: bid_tick,
                 qty_lot: fill_qty,
                 maker_open_lot: maker_open_after,
-                taker_open_lot: taker_open_after,
+                taker_open_lot: taker_open,
             });
-            if Self::should_drop_maker_client(maker_gone, maker_client) {
+            if maker_gone && maker_client != 0 {
                 self.client_to_id.remove(&maker_client);
             }
             fill_count += 1;
         }
-    }
-
-    /// Whether a fully consumed maker should be removed from `client_to_id`.
-    #[cfg_attr(coverage_nightly, coverage(off))]
-    fn should_drop_maker_client(maker_gone: bool, maker_client: u64) -> bool {
-        maker_gone && maker_client != 0
     }
 }
 
@@ -330,7 +340,6 @@ mod tests {
             max_fills: None,
             client_id: 2,
         });
-        // No fills; market leftover revoked.
         assert!(ev.iter().all(|e| !matches!(e, HpEvent::Fill { .. })));
         assert!(ev
             .iter()
@@ -400,5 +409,28 @@ mod tests {
             client_id: 42,
         });
         assert!(ev.is_empty());
+    }
+
+    #[test]
+    fn cancel_by_client_id_clears_map() {
+        let mut e = HpEngine::new();
+        e.on_order(HpCommand::Limit {
+            side: Side::Buy,
+            price_tick: 100,
+            qty_lot: 5,
+            ts: 1,
+            client_id: 7,
+        });
+        let ev = e.on_order(HpCommand::Cancel { id: 7 });
+        assert!(matches!(
+            ev[0],
+            HpEvent::Revoke {
+                client_id: 7,
+                reason: 0,
+                ..
+            }
+        ));
+        assert!(e.book.best_bid().is_none());
+        assert!(e.client_to_id.is_empty());
     }
 }

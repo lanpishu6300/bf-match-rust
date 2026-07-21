@@ -63,4 +63,8 @@ Protocol: [`fair-compare.md`](fair-compare.md). Do not compare against zero-fill
 
 Note: post–client_id map, `fair_compare` hp ~25–70× vs core depending on machine load; always require fill_rate≈0.5.
 
-No extra optimization pass required for this run.
+## HP L1 hot-path (2026-07-21)
+
+Cancel O(1) map ops, tighter match loop, `get_or_insert_with` on levels. Details and pressure metrics: [`perf-hotpath-2026-07.md`](./perf-hotpath-2026-07.md).
+
+`fair_cross` (HP, n=50000, fill_rate=0.5, median of 8 runs): ~54.3 ns/order (~18–19M orders/s). Same-day baseline before changes ~56.3 ns/order.

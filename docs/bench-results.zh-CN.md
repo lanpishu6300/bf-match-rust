@@ -63,4 +63,8 @@ cargo run -p match-bench --release --bin fair_compare -- --n 50000
 
 说明：client_id map 之后，`fair_compare` hp 相对 core 约 25–70×（视机器负载）；始终要求 fill_rate≈0.5。
 
-本轮无需额外优化 pass。
+## HP L1 热路径（2026-07-21）
+
+撤单 O(1) map、撮合环收紧、档位 `get_or_insert_with`。细节与压测指标：[`perf-hotpath-2026-07.zh-CN.md`](./perf-hotpath-2026-07.zh-CN.md)。
+
+`fair_cross`（HP，n=50000，fill_rate=0.5，8 次中位数）：约 54.3 ns/order（约 18–19M orders/s）。同日改动前基线约 56.3 ns/order。
