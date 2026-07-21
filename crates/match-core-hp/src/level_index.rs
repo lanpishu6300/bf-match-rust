@@ -7,6 +7,7 @@ pub(crate) trait LevelIndex {
     fn get(&self, tick: i64) -> Option<&Level>;
     fn get_mut(&mut self, tick: i64) -> Option<&mut Level>;
     fn contains(&self, tick: i64) -> bool;
+    #[allow(dead_code)] // used by ART unit tests and get_or_insert miss path
     fn insert(&mut self, tick: i64, level: Level);
     fn remove(&mut self, tick: i64) -> Option<Level>;
     /// Best tick for this side (bid: max, ask: min).

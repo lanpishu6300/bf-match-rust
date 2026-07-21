@@ -245,11 +245,10 @@ impl Book {
     }
 
     fn recycle_removed(&mut self, removed: Option<Level>) {
-        match removed {
-            Some(level) => self.recycle_level(level),
-            // Defensive: level index entry already absent.
-            None => {}
+        if let Some(level) = removed {
+            self.recycle_level(level);
         }
+        // Defensive: level index entry already absent → no recycle.
     }
 
     /// Test/coverage helpers to force corrupt book states for defensive-path coverage.
@@ -298,6 +297,17 @@ impl Book {
     pub fn test_set_best_ask_front(&mut self, bogus_id: u64) {
         if let Some(tick) = self.best_ask_tick {
             if let Some(level) = self.asks.get_mut(tick) {
+                level.ids.clear();
+                level.ids.push_back(bogus_id);
+            }
+        }
+    }
+
+    #[cfg(any(test, coverage))]
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    pub fn test_set_best_bid_front(&mut self, bogus_id: u64) {
+        if let Some(tick) = self.best_bid_tick {
+            if let Some(level) = self.bids.get_mut(tick) {
                 level.ids.clear();
                 level.ids.push_back(bogus_id);
             }
