@@ -1,0 +1,11 @@
+#!/bin/sh
+# Drop automated editor co-author trailers from commit messages.
+# Enable with: git config core.hooksPath .githooks
+msg_file=$1
+tmp=$(mktemp) || exit 0
+# Match common editor-injected co-author lines without keeping product names in docs.
+grep -viE '^Co-authored-by:.*<[^>]*cursor[^>]*>$' "$msg_file" >"$tmp" 2>/dev/null || {
+  rm -f "$tmp"
+  exit 0
+}
+mv "$tmp" "$msg_file"

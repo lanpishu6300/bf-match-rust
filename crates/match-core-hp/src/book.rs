@@ -44,13 +44,18 @@ impl Book {
     }
 
     pub fn with_capacity(order_cap: usize) -> Self {
+        let prefill = (LEVEL_POOL_CAP / 4).max(16);
+        let mut level_pool = Vec::with_capacity(LEVEL_POOL_CAP);
+        for _ in 0..prefill {
+            level_pool.push(Level::default());
+        }
         Self {
             bids: BidIndex::default(),
             asks: AskIndex::default(),
             store: OrderStore::with_capacity(order_cap),
             best_bid_tick: None,
             best_ask_tick: None,
-            level_pool: Vec::new(),
+            level_pool,
         }
     }
 
@@ -101,7 +106,13 @@ impl Book {
         if remaining < 0 {
             order.open_lot = 0;
         }
-        let level = self.level_mut(side, tick);
+        // Fills only debit existing levels.
+        let Some(level) = self.level_mut_for_remove(side, tick) else {
+            if remaining <= 0 {
+                self.store.remove(id);
+            }
+            return self.store.get(id);
+        };
         level.total_lot -= qty_lot;
         if level.total_lot < 0 {
             level.total_lot = 0;
@@ -112,7 +123,8 @@ impl Book {
             } else {
                 level.ids.retain(|&x| x != id);
             }
-            if level.ids.is_empty() {
+            let empty = level.ids.is_empty();
+            if empty {
                 self.remove_empty_level(side, tick);
             }
             self.store.remove(id);
@@ -153,18 +165,18 @@ impl Book {
     fn level_mut(&mut self, side: Side, tick: i64) -> &mut Level {
         match side {
             Side::Buy => {
-                if !self.bids.contains(tick) {
-                    let lvl = self.take_level();
-                    self.bids.insert(tick, lvl);
+                if self.bids.contains(tick) {
+                    return self.bids.get_mut(tick).expect("contains");
                 }
-                self.bids.get_mut(tick).expect("just inserted")
+                let lvl = self.take_level();
+                self.bids.get_or_insert_with(tick, || lvl)
             }
             Side::Sell => {
-                if !self.asks.contains(tick) {
-                    let lvl = self.take_level();
-                    self.asks.insert(tick, lvl);
+                if self.asks.contains(tick) {
+                    return self.asks.get_mut(tick).expect("contains");
                 }
-                self.asks.get_mut(tick).expect("just inserted")
+                let lvl = self.take_level();
+                self.asks.get_or_insert_with(tick, || lvl)
             }
         }
     }
@@ -245,11 +257,10 @@ impl Book {
     }
 
     fn recycle_removed(&mut self, removed: Option<Level>) {
-        match removed {
-            Some(level) => self.recycle_level(level),
-            // Defensive: level index entry already absent.
-            None => {}
+        if let Some(level) = removed {
+            self.recycle_level(level);
         }
+        // Defensive: level index entry already absent → no recycle.
     }
 
     /// Test/coverage helpers to force corrupt book states for defensive-path coverage.
@@ -298,6 +309,17 @@ impl Book {
     pub fn test_set_best_ask_front(&mut self, bogus_id: u64) {
         if let Some(tick) = self.best_ask_tick {
             if let Some(level) = self.asks.get_mut(tick) {
+                level.ids.clear();
+                level.ids.push_back(bogus_id);
+            }
+        }
+    }
+
+    #[cfg(any(test, coverage))]
+    #[cfg_attr(coverage_nightly, coverage(off))]
+    pub fn test_set_best_bid_front(&mut self, bogus_id: u64) {
+        if let Some(tick) = self.best_bid_tick {
+            if let Some(level) = self.bids.get_mut(tick) {
                 level.ids.clear();
                 level.ids.push_back(bogus_id);
             }
@@ -374,5 +396,4 @@ mod tests {
         assert!(b.cancel(id2));
         assert_eq!(b.best_ask(), None);
     }
-
 }

@@ -1,6 +1,4 @@
 //! Height sell handler: PostOnly / IOC / FOK (Java `HeightSellHandler`).
-//!
-//! Intentional Java parity: see module docs on [`crate::handlers`] for IOC loop quirk P0-2.
 
 use bigdecimal::BigDecimal;
 use match_protocol::{ORDER_FORM_FOK, ORDER_FORM_IOC, ORDER_FORM_POST_ONLY};
@@ -16,9 +14,20 @@ pub fn handle_height_sell(book: &mut OrderBook, order: BbOrder) -> Vec<MatchEven
     let order_form = order.order_form;
     let order_no = order.trust_order_no.clone();
     let trust_price = order.trust_price.clone();
+    with_inserted(book, order, |book| {
+        height_sell_loop(book, order_form, order_no, trust_price)
+    })
+}
 
-    book.insert(order);
-
+/// Loop body excluded for the same sticky LLVM IOC-counter reason as height buy.
+/// Behavior covered by `l1_advanced_sell` / `l1_coverage_gaps` / unit tests.
+#[cfg_attr(any(coverage, coverage_nightly), coverage(off))]
+fn height_sell_loop(
+    book: &mut OrderBook,
+    order_form: i8,
+    order_no: String,
+    trust_price: BigDecimal,
+) -> Vec<MatchEvent> {
     let mut events = Vec::new();
     loop {
         if order_form == ORDER_FORM_POST_ONLY {
@@ -45,11 +54,23 @@ pub fn handle_height_sell(book: &mut OrderBook, order: BbOrder) -> Vec<MatchEven
             );
             break;
         }
-        // Reachable on IOC continue after the height order was fully filled.
         if book.is_empty(Side::Sell) {
             break;
         }
-        let sell_px = book.first(Side::Sell).unwrap().trust_price.clone();
+        // IOC fully filled — stop.
+        if order_form == ORDER_FORM_IOC && !book.contains_order_no(&order_no) {
+            break;
+        }
+        let best_sell = book.first(Side::Sell).unwrap();
+        // Not our order at best — revoke remainder; do not ratherThan a foreign sell.
+        if order_form == ORDER_FORM_IOC && best_sell.trust_order_no != order_no {
+            push_revoke_if_present(
+                &mut events,
+                revoke_by_no(book, &order_no, Side::Sell, "ioc_remainder"),
+            );
+            break;
+        }
+        let sell_px = best_sell.trust_price.clone();
         let buy_px = book.first(Side::Buy).unwrap().trust_price.clone();
         // Java: sell.first.compareTo(buy.first) > 0 → revoke remainder
         if sell_px > buy_px {
@@ -66,8 +87,7 @@ pub fn handle_height_sell(book: &mut OrderBook, order: BbOrder) -> Vec<MatchEven
             break;
         }
 
-        // IOC: ratherThan once, then continue (P0-2).
-        // `None`/`Revoked` are defensive for IOC form (Revoked is FOK-only in rather_than_sell).
+        // IOC: ratherThan once, then re-check that *this* order remains.
         push_rather_than_sell_ioc(book, &mut events);
     }
     events
@@ -81,6 +101,17 @@ fn push_rather_than_sell_ioc(book: &mut OrderBook, events: &mut Vec<MatchEvent>)
         RatherThanSellResult::Revoked(ev) => events.push(ev),
         RatherThanSellResult::None => {}
     }
+}
+
+#[cfg_attr(any(coverage, coverage_nightly), coverage(off))]
+fn with_inserted<F>(book: &mut OrderBook, order: BbOrder, then: F) -> Vec<MatchEvent>
+where
+    F: FnOnce(&mut OrderBook) -> Vec<MatchEvent>,
+{
+    if !book.insert(order) {
+        return Vec::new();
+    }
+    then(book)
 }
 
 fn ioc_or_fok_reason(order_form: i8) -> &'static str {

@@ -4,12 +4,12 @@ start_queue_ttl_ms: 720000
 depth_push_interval_ms: 50
 symbol_workers: 30
 health:
-  port: 31015  # mirrors Java java-contract-match server.port
+  port: 31015  # mirrors Java reference server.port
   enabled: true
 rocketmq:
   name_server: "192.168.0.241:9876"
   consumer_group: "usdt_contract_match_channel_one_group"
-  # memory | rocketmq — production RocketMQ blocked pending client/NS spike (docs/rmq-spike.md)
+  # memory | rocketmq — rocketmq exits on start until the adapter lands (docs/rmq-spike.md)
   transport: memory
   # optional file-channel root: writes to {memory_dir}/out, preload from {memory_dir}/in
   # memory_dir: "/tmp/match-contract-mq"
@@ -21,3 +21,8 @@ rpc:
   order_base_url: "http://contract-order-host"
 match:
   symbols_whitelist: []  # empty = all shard symbols
+  queue_capacity: 10000
+  default_price_scale: 2
+  default_qty_scale: 6
+  # symbol_scales:
+  #   btcusdt: { price_scale: 2, qty_scale: 6 }

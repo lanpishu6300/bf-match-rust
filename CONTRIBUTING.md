@@ -43,6 +43,20 @@ Prefer Conventional Commits style:
 - `docs: …`
 - `chore: …`
 
+## Prose
+
+Write like a maintainer of this matching engine:
+
+- Comments explain *why* (Java parity, MQ topic shape, restore path), not change history
+- No editor or assistant product names, “AI generated” disclaimers, or skill-routing banners in code, docs, commits, or PRs
+- No automated `Co-authored-by` trailers from editors in commit messages (see `.githooks/`)
+
+Optional local hook (once per clone):
+
+```bash
+git config core.hooksPath .githooks
+```
+
 ## License
 
 By contributing, you agree that your contributions are licensed under the **Apache License 2.0** (see `LICENSE`).

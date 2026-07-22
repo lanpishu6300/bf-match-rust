@@ -4,7 +4,9 @@
 //! internal state (e.g. `Book::remove_from_level` when the level index is missing)
 //! are called out inline where we intentionally do not add tests.
 
-use match_core_hp::{Book, HpCommand, HpEngine, HpEvent, HpOrder, HpWorker, OrderStore, Side, WaitStrategy};
+use match_core_hp::{
+    Book, HpCommand, HpEngine, HpEvent, HpOrder, HpWorker, OrderStore, Side, WaitStrategy,
+};
 
 #[test]
 fn engine_default_constructible() {
@@ -26,7 +28,7 @@ fn match_buy_stops_when_taker_qty_exhausted_with_book_left() {
         side: Side::Buy,
         qty_lot: 2,
         ts: 2,
-        max_levels: None,
+        max_fills: None,
         client_id: 2,
     });
     assert_eq!(ev.len(), 1);
@@ -72,7 +74,13 @@ fn limit_sell_crosses_when_bid_at_or_above_limit() {
         ts: 2,
         client_id: 2,
     });
-    assert!(matches!(ev[0], HpEvent::Fill { price_tick: 100, .. }));
+    assert!(matches!(
+        ev[0],
+        HpEvent::Fill {
+            price_tick: 100,
+            ..
+        }
+    ));
 }
 
 #[test]
@@ -112,7 +120,7 @@ fn zero_qty_limit_and_market_are_no_ops() {
             side: Side::Buy,
             qty_lot: -1,
             ts: 2,
-            max_levels: None,
+            max_fills: None,
             client_id: 2,
         })
         .is_empty());
@@ -158,7 +166,13 @@ fn limit_sell_above_best_bid_does_not_cross() {
         ts: 2,
         client_id: 2,
     });
-    assert!(matches!(ev[0], HpEvent::Rest { price_tick: 101, .. }));
+    assert!(matches!(
+        ev[0],
+        HpEvent::Rest {
+            price_tick: 101,
+            ..
+        }
+    ));
     assert_eq!(e.book.best_bid(), Some(100));
     assert_eq!(e.book.best_ask(), Some(101));
 }
@@ -189,7 +203,7 @@ fn cancel_by_client_id() {
 }
 
 #[test]
-fn market_sell_respects_max_levels() {
+fn market_sell_respects_max_fills() {
     let mut e = HpEngine::new();
     for (i, tick) in [(1, 100i64), (2, 99), (3, 98)].into_iter() {
         e.on_order(HpCommand::Limit {
@@ -204,10 +218,18 @@ fn market_sell_respects_max_levels() {
         side: Side::Sell,
         qty_lot: 10,
         ts: 4,
-        max_levels: Some(2),
+        max_fills: Some(2),
         client_id: 4,
     });
-    assert_eq!(ev.len(), 2);
+    assert_eq!(ev.len(), 3);
+    assert!(matches!(
+        ev[2],
+        HpEvent::Revoke {
+            client_id: 4,
+            reason: 1,
+            ..
+        }
+    ));
     assert_eq!(e.book.best_bid(), Some(98));
 }
 
@@ -316,6 +338,69 @@ fn maker_with_zero_client_id_still_fills() {
 }
 
 #[test]
+fn maker_with_zero_client_id_still_fills_on_sell_taker() {
+    let mut e = HpEngine::new();
+    e.on_order(HpCommand::Limit {
+        side: Side::Buy,
+        price_tick: 100,
+        qty_lot: 1,
+        ts: 1,
+        client_id: 0,
+    });
+    let ev = e.on_order(HpCommand::Limit {
+        side: Side::Sell,
+        price_tick: 100,
+        qty_lot: 1,
+        ts: 2,
+        client_id: 2,
+    });
+    assert!(matches!(ev[0], HpEvent::Fill { .. }));
+}
+
+#[test]
+fn duplicate_limit_client_id_is_rejected() {
+    let mut e = HpEngine::new();
+    e.on_order(HpCommand::Limit {
+        side: Side::Buy,
+        price_tick: 100,
+        qty_lot: 1,
+        ts: 1,
+        client_id: 42,
+    });
+    let ev = e.on_order(HpCommand::Limit {
+        side: Side::Sell,
+        price_tick: 110,
+        qty_lot: 1,
+        ts: 2,
+        client_id: 42,
+    });
+    assert!(ev.is_empty());
+    assert_eq!(e.book.best_bid(), Some(100));
+    assert!(e.book.best_ask().is_none());
+}
+
+#[test]
+fn duplicate_market_client_id_is_rejected() {
+    let mut e = HpEngine::new();
+    e.on_order(HpCommand::Limit {
+        side: Side::Buy,
+        price_tick: 100,
+        qty_lot: 1,
+        ts: 1,
+        client_id: 7,
+    });
+    let ev = e.on_order(HpCommand::Market {
+        side: Side::Sell,
+        qty_lot: 1,
+        ts: 2,
+        max_fills: None,
+        client_id: 7,
+    });
+    assert!(ev.is_empty());
+    assert_eq!(e.book.best_bid(), Some(100));
+}
+
+#[test]
 fn limit_sell_stops_matching_when_bid_below_limit() {
     let mut e = HpEngine::new();
     e.on_order(HpCommand::Limit {
@@ -332,7 +417,13 @@ fn limit_sell_stops_matching_when_bid_below_limit() {
         ts: 2,
         client_id: 2,
     });
-    assert!(matches!(ev[0], HpEvent::Rest { price_tick: 102, .. }));
+    assert!(matches!(
+        ev[0],
+        HpEvent::Rest {
+            price_tick: 102,
+            ..
+        }
+    ));
     assert_eq!(e.book.best_bid(), Some(100));
 }
 
@@ -440,10 +531,19 @@ fn match_buy_breaks_on_empty_fifo_at_best() {
         side: Side::Buy,
         qty_lot: 1,
         ts: 2,
-        max_levels: None,
+        max_fills: None,
         client_id: 2,
     });
-    assert!(ev.is_empty());
+    // Corrupt empty FIFO: no fills; market leftover is revoked.
+    assert!(!ev.iter().any(|e| matches!(e, HpEvent::Fill { .. })));
+    assert!(ev.iter().any(|e| matches!(
+        e,
+        HpEvent::Revoke {
+            client_id: 2,
+            reason: 1,
+            ..
+        }
+    )));
 }
 
 #[cfg(coverage)]
@@ -462,10 +562,18 @@ fn match_sell_breaks_on_empty_fifo_at_best() {
         side: Side::Sell,
         qty_lot: 1,
         ts: 2,
-        max_levels: None,
+        max_fills: None,
         client_id: 2,
     });
-    assert!(ev.is_empty());
+    assert!(!ev.iter().any(|e| matches!(e, HpEvent::Fill { .. })));
+    assert!(ev.iter().any(|e| matches!(
+        e,
+        HpEvent::Revoke {
+            client_id: 2,
+            reason: 1,
+            ..
+        }
+    )));
 }
 
 #[cfg(coverage)]
@@ -484,10 +592,71 @@ fn match_buy_missing_maker_in_store_uses_zero_open() {
         side: Side::Buy,
         qty_lot: 1,
         ts: 2,
-        max_levels: None,
+        max_fills: None,
         client_id: 2,
     });
-    assert!(ev.is_empty());
+    // Missing maker in store: match breaks; market leftover revoked.
+    assert!(!ev.iter().any(|e| matches!(e, HpEvent::Fill { .. })));
+    assert!(ev.iter().any(|e| matches!(
+        e,
+        HpEvent::Revoke {
+            client_id: 2,
+            reason: 1,
+            ..
+        }
+    )));
+}
+
+#[test]
+fn match_buy_stops_when_maker_open_non_positive() {
+    let mut e = HpEngine::new();
+    e.on_order(HpCommand::Limit {
+        side: Side::Sell,
+        price_tick: 100,
+        qty_lot: 1,
+        ts: 1,
+        client_id: 1,
+    });
+    let maker = e.book.front_id(Side::Sell, 100).unwrap();
+    e.book.store_mut().get_mut(maker).unwrap().open_lot = 0;
+    let ev = e.on_order(HpCommand::Limit {
+        side: Side::Buy,
+        price_tick: 100,
+        qty_lot: 1,
+        ts: 2,
+        client_id: 2,
+    });
+    assert!(matches!(ev[0], HpEvent::Rest { .. }));
+}
+
+#[cfg(coverage)]
+#[test]
+fn match_sell_missing_maker_in_store_breaks() {
+    let mut e = HpEngine::new();
+    e.on_order(HpCommand::Limit {
+        side: Side::Buy,
+        price_tick: 100,
+        qty_lot: 1,
+        ts: 1,
+        client_id: 1,
+    });
+    e.book.test_set_best_bid_front(u64::MAX);
+    let ev = e.on_order(HpCommand::Market {
+        side: Side::Sell,
+        qty_lot: 1,
+        ts: 2,
+        max_fills: None,
+        client_id: 2,
+    });
+    assert!(!ev.iter().any(|e| matches!(e, HpEvent::Fill { .. })));
+    assert!(ev.iter().any(|e| matches!(
+        e,
+        HpEvent::Revoke {
+            client_id: 2,
+            reason: 1,
+            ..
+        }
+    )));
 }
 
 // Still unreachable without further hooks: `Book::remove_from_level` when the level

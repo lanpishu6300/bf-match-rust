@@ -7,12 +7,17 @@ pub(crate) trait LevelIndex {
     fn get(&self, tick: i64) -> Option<&Level>;
     fn get_mut(&mut self, tick: i64) -> Option<&mut Level>;
     fn contains(&self, tick: i64) -> bool;
+    #[allow(dead_code)] // used by ART unit tests and get_or_insert miss path
     fn insert(&mut self, tick: i64, level: Level);
     fn remove(&mut self, tick: i64) -> Option<Level>;
     /// Best tick for this side (bid: max, ask: min).
     fn best_tick(&self) -> Option<i64>;
     /// Up to `n` levels in best-first order: `(tick, total_lot)`.
     fn depth(&self, n: usize) -> Vec<(i64, i64)>;
+    /// One probe on hit; insert-then-get on miss.
+    fn get_or_insert_with<F>(&mut self, tick: i64, f: F) -> &mut Level
+    where
+        F: FnOnce() -> Level;
 }
 
 #[cfg(not(feature = "art"))]
@@ -60,6 +65,13 @@ mod btree {
                 .map(|(t, lvl)| (*t, lvl.total_lot))
                 .collect()
         }
+
+        fn get_or_insert_with<F>(&mut self, tick: i64, f: F) -> &mut Level
+        where
+            F: FnOnce() -> Level,
+        {
+            self.map.entry(tick).or_insert_with(f)
+        }
     }
 
     /// Bid side: descending tick order (best = highest).
@@ -99,6 +111,13 @@ mod btree {
                 .take(n)
                 .map(|(Reverse(t), lvl)| (*t, lvl.total_lot))
                 .collect()
+        }
+
+        fn get_or_insert_with<F>(&mut self, tick: i64, f: F) -> &mut Level
+        where
+            F: FnOnce() -> Level,
+        {
+            self.map.entry(Reverse(tick)).or_insert_with(f)
         }
     }
 }
