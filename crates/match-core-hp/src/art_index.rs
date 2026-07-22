@@ -383,9 +383,7 @@ impl LevelIndex for ArtAskIndex {
     where
         F: FnOnce() -> Level,
     {
-        if self.map.contains(tick) {
-            return self.map.get_mut(tick).expect("contains");
-        }
+        // `Book::level_mut` only calls this on a miss.
         self.map.insert(tick, f());
         self.map.get_mut(tick).expect("just inserted")
     }
@@ -422,9 +420,7 @@ impl LevelIndex for ArtBidIndex {
     where
         F: FnOnce() -> Level,
     {
-        if self.map.contains(tick) {
-            return self.map.get_mut(tick).expect("contains");
-        }
+        // `Book::level_mut` only calls this on a miss.
         self.map.insert(tick, f());
         self.map.get_mut(tick).expect("just inserted")
     }

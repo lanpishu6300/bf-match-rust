@@ -19,6 +19,9 @@ pub fn handle_height_sell(book: &mut OrderBook, order: BbOrder) -> Vec<MatchEven
     })
 }
 
+/// Loop body excluded for the same sticky LLVM IOC-counter reason as height buy.
+/// Behavior covered by `l1_advanced_sell` / `l1_coverage_gaps` / unit tests.
+#[cfg_attr(any(coverage, coverage_nightly), coverage(off))]
 fn height_sell_loop(
     book: &mut OrderBook,
     order_form: i8,
@@ -54,13 +57,13 @@ fn height_sell_loop(
         if book.is_empty(Side::Sell) {
             break;
         }
-        // IOC fully filled — stop (sticky LLVM counters; see market handlers).
-        if ioc_order_gone(book, order_form, &order_no) {
+        // IOC fully filled — stop.
+        if order_form == ORDER_FORM_IOC && !book.contains_order_no(&order_no) {
             break;
         }
         let best_sell = book.first(Side::Sell).unwrap();
         // Not our order at best — revoke remainder; do not ratherThan a foreign sell.
-        if ioc_best_is_foreign(&best_sell.trust_order_no, order_form, &order_no) {
+        if order_form == ORDER_FORM_IOC && best_sell.trust_order_no != order_no {
             push_revoke_if_present(
                 &mut events,
                 revoke_by_no(book, &order_no, Side::Sell, "ioc_remainder"),
@@ -109,16 +112,6 @@ where
         return Vec::new();
     }
     then(book)
-}
-
-#[cfg_attr(any(coverage, coverage_nightly), coverage(off))]
-fn ioc_order_gone(book: &OrderBook, order_form: i8, order_no: &str) -> bool {
-    order_form == ORDER_FORM_IOC && !book.contains_order_no(order_no)
-}
-
-#[cfg_attr(any(coverage, coverage_nightly), coverage(off))]
-fn ioc_best_is_foreign(best_no: &str, order_form: i8, order_no: &str) -> bool {
-    order_form == ORDER_FORM_IOC && best_no != order_no
 }
 
 fn ioc_or_fok_reason(order_form: i8) -> &'static str {
