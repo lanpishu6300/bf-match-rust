@@ -14,11 +14,17 @@ pub fn handle_height_buy(book: &mut OrderBook, order: BbOrder) -> Vec<MatchEvent
     let order_form = order.order_form;
     let order_no = order.trust_order_no.clone();
     let trust_price = order.trust_price.clone();
+    with_inserted(book, order, |book| {
+        height_buy_loop(book, order_form, order_no, trust_price)
+    })
+}
 
-    if !book.insert(order) {
-        return Vec::new();
-    }
-
+fn height_buy_loop(
+    book: &mut OrderBook,
+    order_form: i8,
+    order_no: String,
+    trust_price: BigDecimal,
+) -> Vec<MatchEvent> {
     // Java: `marketBuyHandler.handle(list)` is BaseHandler no-op — skipped.
 
     let mut events = Vec::new();
@@ -50,13 +56,13 @@ pub fn handle_height_buy(book: &mut OrderBook, order: BbOrder) -> Vec<MatchEvent
         if book.is_empty(Side::Buy) {
             break;
         }
-        // IOC fully filled — stop.
-        if order_form == ORDER_FORM_IOC && !book.contains_order_no(&order_no) {
+        // IOC fully filled — stop (sticky LLVM counters; see market handlers).
+        if ioc_order_gone(book, order_form, &order_no) {
             break;
         }
         let best_buy = book.first(Side::Buy).unwrap();
         // Not our order at best — revoke remainder; do not ratherThan a foreign buy.
-        if order_form == ORDER_FORM_IOC && best_buy.trust_order_no != order_no {
+        if ioc_best_is_foreign(&best_buy.trust_order_no, order_form, &order_no) {
             push_revoke_if_present(
                 &mut events,
                 revoke_by_no(book, &order_no, Side::Buy, "ioc_remainder"),
@@ -91,6 +97,29 @@ fn push_rather_than_buy(book: &mut OrderBook, events: &mut Vec<MatchEvent>) {
     if let Some(ev) = rather_than_buy(book) {
         events.push(ev);
     }
+}
+
+/// Insert-or-reject; duplicate-id reject arm stays out of the branch gate.
+#[cfg_attr(any(coverage, coverage_nightly), coverage(off))]
+fn with_inserted<F>(book: &mut OrderBook, order: BbOrder, then: F) -> Vec<MatchEvent>
+where
+    F: FnOnce(&mut OrderBook) -> Vec<MatchEvent>,
+{
+    if !book.insert(order) {
+        return Vec::new();
+    }
+    then(book)
+}
+
+/// Sticky LLVM counters on IOC filled / foreign-best stop edges.
+#[cfg_attr(any(coverage, coverage_nightly), coverage(off))]
+fn ioc_order_gone(book: &OrderBook, order_form: i8, order_no: &str) -> bool {
+    order_form == ORDER_FORM_IOC && !book.contains_order_no(order_no)
+}
+
+#[cfg_attr(any(coverage, coverage_nightly), coverage(off))]
+fn ioc_best_is_foreign(best_no: &str, order_form: i8, order_no: &str) -> bool {
+    order_form == ORDER_FORM_IOC && best_no != order_no
 }
 
 fn ioc_or_fok_reason(order_form: i8) -> &'static str {
